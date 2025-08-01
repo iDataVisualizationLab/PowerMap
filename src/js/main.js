@@ -9,7 +9,14 @@ const timeFormat = d3.timeFormat('%Y-%m-%dT%H:%M:%S-05:00');
 let Layout = {
     data: {},
 }
-
+const NODE_RANGES = [
+  '10.101.91.[1-20]',
+  '10.101.92.[1-20]',
+  '10.101.94.[1-20]',
+  '10.101.95.[1-10]',
+  '10.101.96.[1-20]',
+  '10.101.97.[1-20]',
+];
 let serviceSelected = 0;
 
 // let request = new Simulation('../HiperView/data/742020.json');
@@ -157,7 +164,8 @@ if (mode === 'realTime') {
   d3.select('#processBtn').style('display', 'none');
 
   // Bind action to process button
-  d3.select('#processBtn').on('click', loadHistoricalData);
+  // d3.select('#processBtn').on('click', loadHistoricalData);
+  d3.select('#processBtn').on('click', loadHistoricalAcrossRanges);
 
   // Handle time range changes
   d3.select('#realTimeRange')
@@ -227,6 +235,58 @@ function buildRealTimeParams(rangeValue, intervalValue) {
     compression: false
   };
 }
+function combineResults(resultsArray) {
+  const combined = {
+    time_stamp: [],
+    nodes_info: {},
+    jobs_info: {}
+  };
+  console.log('Combining results:', resultsArray.length, 'results');
+  console.log(resultsArray);
+
+  for (const result of resultsArray) {
+    // Merge time stamps
+    combined.time_stamp.push(...(result.time_stamp ?? []));
+
+    // Merge nodes_info
+    for (const [node, info] of Object.entries(result.nodes_info)) {
+      if (!combined.nodes_info[node]) {
+        combined.nodes_info[node] = info;
+      }
+    }
+
+    // Merge jobs_info
+    for (const [jid, job] of Object.entries(result.jobs_info)) {
+      if (!combined.jobs_info[jid]) {
+        combined.jobs_info[jid] = job;
+      }
+    }
+  }
+
+  // Remove duplicate time_stamps and sort
+  combined.time_stamp = Array.from(new Set(combined.time_stamp)).sort((a, b) => a - b);
+
+  return combined;
+}
+
+async function fetchAllNodeRanges(startStr, endStr, isRealTime = false) {
+  const allResults = [];
+
+  for (const range of NODE_RANGES) {
+    // const nodes = expandBrackets(range);
+    const params = {
+      ...(isRealTime
+        ? buildRealTimeParams(Date.now() - 1 * 60 * 60 * 1000, Date.now()) // if needed
+        : buildHistoricalParams(startStr, endStr)),
+      nodelist: range,
+    };
+
+    const result = await fetchDataAndProcess(params, true);
+    allResults.push(result);
+  }
+
+  return combineResults(allResults);
+}
 
 function buildHistoricalParams(startStr, endStr) {
   const parse = d3.timeParse('%Y-%m-%dT%H:%M');
@@ -244,19 +304,24 @@ function buildHistoricalParams(startStr, endStr) {
     end: format(end),
     interval: interval,
     aggregation: "max",
-    nodelist: "10.101.93.[1-8]",
+    nodelist: "10.101.91.[1-20]",
     metrics: [
-      "GPU_Usage", "GPU_PowerConsumption", "GPU_MemoryUsage", "GPU_Temperature",
-      "CPU_Usage", "CPU_PowerConsumption", "CPU_Temperature",
-      "DRAM_Usage", "DRAM_PowerConsumption",
-      "System_PowerConsumption", "Jobs_Info", "NodeJobs_Correlation", "Nodes_State"
+    "CPU_Usage",
+    "CPU_PowerConsumption",
+    "CPU_Temperature",
+    "DRAM_Usage",
+    "DRAM_PowerConsumption",
+    "System_PowerConsumption",
+    "Jobs_Info",
+    "NodeJobs_Correlation",
+    "Nodes_State"
     ],
     compression: false
   };
 }
 
 function fetchDataAndProcess_old(Params) {
-  return fetch('http://narumuu.ttu.edu/api/h100/', {
+  return fetch('http://narumuu.ttu.edu/api/zen4/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(Params)
@@ -418,7 +483,7 @@ async function fetchDataAndProcess(Params, isRealTime = true) {
 
   if (isRealTime) {
     // Real-time: Fetch from API
-    apiData = await fetch('http://narumuu.ttu.edu/api/h100/', {
+    apiData = await fetch('http://narumuu.ttu.edu/api/zen4/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(Params)
@@ -445,10 +510,11 @@ async function fetchDataAndProcess(Params, isRealTime = true) {
                     cpus: Array(len).fill().map(() => []),
                     job_id: Array(len).fill().map(() => []),
                     system_power: Array(len).fill().map(() => []),
-                    gpu_power: Array(len).fill().map(() => []),
+                    // gpu_power: Array(len).fill().map(() => []),
                     cpu_power: Array(len).fill().map(() => []),
-                    gpu_mem: Array(len).fill().map(() => []),
-                    gpu_usage: Array(len).fill().map(() => []),
+                    // gpu_mem: Array(len).fill().map(() => []),
+                    // gpu_usage: Array(len).fill().map(() => []),
+                    temperature: Array(len).fill().map(() => []),
                     cpu_usage: Array(len).fill().map(() => []),
                     dram_usage: Array(len).fill().map(() => []),
                     dram_power: Array(len).fill().map(() => []),
@@ -460,10 +526,11 @@ async function fetchDataAndProcess(Params, isRealTime = true) {
             nodes_info[node].cpus[idx] = entry.cores ?? [];
             nodes_info[node].job_id[idx] = entry.jobs ?? [];
             nodes_info[node].system_power[idx] = entry.system_power_consumption ?? [];
-            nodes_info[node].gpu_power[idx] = (entry.gpu_power_consumption ?? []).map(v => v / 1000);
+            // nodes_info[node].gpu_power[idx] = (entry.gpu_power_consumption ?? []).map(v => v / 1000);
             nodes_info[node].cpu_power[idx] = entry.cpu_power_consumption ?? [];
-            nodes_info[node].gpu_mem[idx] = entry.gpu_memory_usage ?? [];
-            nodes_info[node].gpu_usage[idx] = entry.gpu_usage ?? [];
+            // nodes_info[node].gpu_mem[idx] = entry.gpu_memory_usage ?? [];
+            // nodes_info[node].gpu_usage[idx] = entry.gpu_usage ?? [];
+            nodes_info[node].temperature[idx] = entry.temperature ?? [];
             nodes_info[node].cpu_usage[idx] = entry.cpu_usage ?? [];
             nodes_info[node].dram_usage[idx] = entry.dram_usage ?? [];
 nodes_info[node].dram_power[idx] = (entry.dram_power_consumption ?? []).map(v => v / 1000);
@@ -593,6 +660,20 @@ function startRealTimePolling(isRealTime = true) {
     initTimeElement();
   realTimeIntervalId = setInterval(fetchAndUpdate, intervalMs);
 }
+
+async function loadHistoricalAcrossRanges() {
+  const start = document.getElementById('startTime')?.value;
+  const end = document.getElementById('endTime')?.value;
+  if (!start || !end) {
+    console.warn('Start or End time is missing.');
+    return;
+  }
+
+  const data = await fetchAllNodeRanges(start, end);
+  request = new Simulation(Promise.resolve(data)); // you might need to adapt Simulation constructor
+  initdraw();
+  initTimeElement();
+}
 function loadHistoricalData() {
   if (realTimeIntervalId) clearInterval(realTimeIntervalId);
 
@@ -662,9 +743,12 @@ $(document).ready(function () {
             serviceSelected = +command.service;
         if (command.metric !== undefined && _.isNumber(+command.metric))
             serviceSelected = +command.metric;
+        // serviceListattr = [
+        //     "system_power", "gpu_power", "cpu_power", "dram_power",
+        //     "gpu_mem", "gpu_usage", "cpu_usage", "dram_usage",
+        // ];
         serviceListattr = [
-            "system_power", "gpu_power", "cpu_power", "dram_power",
-            "gpu_mem", "gpu_usage", "cpu_usage", "dram_usage",
+            "system_power","cpu_power", "dram_power", "temperature", "cpu_usage", "dram_usage",
         ];
 
         serviceLists = serviceListattr.map((key, index) => ({
@@ -677,7 +761,7 @@ $(document).ready(function () {
                 enable: true,
                 idroot: index,
                 angle: 0,
-                range: [0, 3000]
+                range: index == 3 ? [0, 100] : [0, 3000],
             }]
         }));
         serviceFullList = [];
