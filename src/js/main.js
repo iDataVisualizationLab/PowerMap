@@ -490,7 +490,7 @@ async function fetchDataAndProcess(Params, isRealTime = true) {
     }).then(res => res.json());
   } else {
     // Historical mode: Load from local file
-    apiData = await fetch('src/data/combined_response.json') // replace with your actual local path
+    apiData = await fetch('src/data/combined_data.json') // replace with your actual local path
       .then(res => res.json());
   }
 
