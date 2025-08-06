@@ -490,7 +490,7 @@ async function fetchDataAndProcess(Params, isRealTime = true) {
     }).then(res => res.json());
   } else {
     // Historical mode: Load from local file
-    apiData = await fetch('src/data/response_1753356572139.json') // replace with your actual local path
+    apiData = await fetch('src/data/combined_response.json') // replace with your actual local path
       .then(res => res.json());
   }
 
@@ -533,7 +533,7 @@ async function fetchDataAndProcess(Params, isRealTime = true) {
             nodes_info[node].temperature[idx] = entry.temperature ?? [];
             nodes_info[node].cpu_usage[idx] = entry.cpu_usage ?? [];
             nodes_info[node].dram_usage[idx] = entry.dram_usage ?? [];
-nodes_info[node].dram_power[idx] = (entry.dram_power_consumption ?? []).map(v => v / 1000);
+            nodes_info[node].dram_power[idx] = (entry.dram_power_consumption ?? []).map(v => v / 1000);
         });
 
         apiData.job_details.forEach(job => {
