@@ -57,67 +57,11 @@ const INTERVALS = {
     { label: '60m', value: 60 * 60000, default: true },
   ]
 };
-function renderModeMenu(mode) {
+function renderModeMenu() {
   const container = d3.select('#timeSetting');
   container.selectAll('*').remove();
 
-// if (mode === 'realTime') {
-//   container.append('div')
-//     .attr('class', 'col-6 mb-3')
-//     .html(`
-//       <label>Time Range</label>
-//       <select class="form-control" id="realTimeRange">
-//         ${TIME_RANGES.map(opt => `<option value="${opt.value}"${opt.default ? ' selected' : ''}>${opt.label}</option>`).join('')}
-//       </select>
-//     `);
 
-//   container.append('div')
-//     .attr('class', 'col-6 mb-3')
-//     .html(`
-//       <label>Interval</label>
-//       <select class="form-control" id="realTimeInterval"></select>
-//     `);
-
-//   // Update interval options when time range changes
-//   d3.select('#realTimeRange')
-//     .on('change', function () {
-//       const selected = +this.value;
-//       const intervalOptions = INTERVALS[selected] || [];
-//       const intervalSelect = d3.select('#realTimeInterval');
-//       intervalSelect.selectAll('option').remove();
-//       intervalOptions.forEach(opt => {
-//         intervalSelect.append('option')
-//           .attr('value', opt.value)
-//           .text(opt.label)
-//           .property('selected', !!opt.default);
-//       });
-
-//       startRealTimePolling(); // trigger reload on range change
-      
-//     })
-//     .dispatch('change'); // trigger once on load
-
-//   // Trigger reload when interval is changed
-//   d3.select('#realTimeInterval').on('change', startRealTimePolling);
-// } else  {
-//   container.append('div')
-//     .attr('class', 'col-6 mb-3')
-//     .html(`
-//       <label>Start Time</label>
-//       <input type="datetime-local" class="form-control" id="startTime" value="2025-06-15T12:00">
-//     `);
-
-//   container.append('div')
-//     .attr('class', 'col-6 mb-3')
-//     .html(`
-//       <label>End Time</label>
-//       <input type="datetime-local" class="form-control" id="endTime" value="2025-06-15T14:00">
-//     `);
-
-//   d3.select('#startTime').on('change', loadHistoricalData);
-//   d3.select('#endTime').on('change', loadHistoricalData);
-// }
-if (mode === 'realTime') {
   container.append('div')
     .attr('class', 'col-6 mb-3')
     .html(`
@@ -207,7 +151,6 @@ if (mode === 'realTime') {
     .dispatch('change'); // trigger once on load
 
   d3.select('#realTimeInterval').on('change', startRealTimePolling);
-}
 
 
 }
@@ -478,6 +421,7 @@ nodes_info[node].dram_power[idx] = (entry.dram_power_consumption ?? []).map(v =>
         };
     })
 }
+
 async function fetchDataAndProcess(Params, isRealTime = true) {
   let apiData;
 
@@ -490,7 +434,7 @@ async function fetchDataAndProcess(Params, isRealTime = true) {
     }).then(res => res.json());
   } else {
     // Historical mode: Load from local file
-    apiData = await fetch('src/data/combined_data.json') // replace with your actual local path
+    apiData = await fetch('src/data/combined_data2.json') // replace with your actual local path
       .then(res => res.json());
   }
 
@@ -693,17 +637,6 @@ function loadHistoricalData() {
 
 function loadSampleData() {
   if (realTimeIntervalId) clearInterval(realTimeIntervalId);
-
-  // const start = document.getElementById('startTime')?.value;
-  // const end = document.getElementById('endTime')?.value;
-
-  // if (!start || !end) {
-  //   console.warn('Start or End time is missing.');
-  //   return;
-  // }
-
-  // const historicalParams = buildHistoricalParams(start, end);
-  // request = new Simulation(fetchDataAndProcess(historicalParams));
   request = new Simulation(fetchDataAndProcess({}, false));
   initdraw();
     initTimeElement();
@@ -721,23 +654,11 @@ d3.selectAll('#navMode li a').on('click', function () {
   }, 100);
 });
 
-// const params = new URLSearchParams(window.location.search);
-// if (params.get('mode') === 'realTime') {
-//   d3.select('#navMode').selectAll('li a').classed('active', false);
-//   d3.select('#navMode').select('li.realtime a').classed('active', true);
-//   renderModeMenu('realTime');
-// //   startRealTimePolling();
-// } else {
-//   d3.select('#navMode').selectAll('li a').classed('active', false);
-//   d3.select('#navMode').select('li.demo a').classed('active', true);
-//   renderModeMenu('historical');
-// }
-
 $(document).ready(function () {
     try {
         // let mode = window.location.search.substring(1).split("mode=")[1].split('&')[0].replace(/%20/g,' '); // get data name after app=
-        let command = window.location.search.substring(1).split("&").map(d => d.split('=')); // get data name after app=
-        command = _.object(command.map(d => d[0]), command.map(d => d[1])); // get data name after app=
+        let command = window.location.search.substring(1).split("&").map(d => d.split('='));
+        command = _.object(command.map(d => d[0]), command.map(d => d[1]));
 
         if (command.service !== undefined && _.isNumber(+command.service))
             serviceSelected = +command.service;
@@ -772,20 +693,14 @@ $(document).ready(function () {
         }));
         alternative_service = [...serviceListattr];
         alternative_scale = Array(serviceListattr.length).fill(1);
-            renderModeMenu('realTime');
-        // if (mode === 'realTime') {
-        //     startRealTimePolling();
-        // } else {
+            renderModeMenu();
             loadSampleData();
-        // }
     } catch (e) {
         request = new Simulation('src/data/922020-932020-145000.json');
     }
     updateProcess({percentage: 5, text: 'Load UI...'})
     initMenu();
     updateProcess({percentage: 15, text: 'Preprocess data...'});
-    // initdraw();
-    // initTimeElement();
 });
 function handleInputSlumrData(data) {
     const jobObjArr = {};
@@ -889,99 +804,7 @@ function handleInputSlumrData(data) {
     return data;
 }
 
-
-
-
-
-
-
-// $(document).ready(function () {
-
-//     try {
-//         // let mode = window.location.search.substring(1).split("mode=")[1].split('&')[0].replace(/%20/g,' '); // get data name after app=
-//         let command = window.location.search.substring(1).split("&").map(d => d.split('=')); // get data name after app=
-//         command = _.object(command.map(d => d[0]), command.map(d => d[1])); // get data name after app=
-
-//         if (command.service !== undefined && _.isNumber(+command.service))
-//             serviceSelected = +command.service;
-//         if (command.metric !== undefined && _.isNumber(+command.metric))
-//             serviceSelected = +command.metric;
-//         if (command.mode === 'realTime') {
-//             // set up ui
-//             d3.select('#navMode').selectAll('li a').classed('active', false);
-//             d3.select('#navMode').select('li.realtime a').classed('active', true);
-//             //---------
-//             request = new Simulation();
-//         } else {
-//             // set up ui
-//             d3.select('#navMode').selectAll('li').classed('active', false);
-//             d3.select('#navMode').select('li.demo a').classed('active', true);
-//             // let url = '../HiperView/data/814_821_2020.json';
-//             // let url = '../jobviewer/src/data/922020-932020-145000.json';
-//             // let url = 'src/data/nocona_aggregated.csv';
-//             // let url = 'src/data/aggregated_metrics_6h.json';
-//             // let url = 'src/data/aggregated_metrics_04_28.json';
-//             // let url = 'src/data/aggregated_metrics_05_12.json'; // demoable
-//             // let url = 'src/data/aggregated_metrics_04-28_L.json';
-//             let url = '../HiperView/data/aggregated_metrics_2021-06-17T06_00_00_2021-06-17T12_00_00.json';
-//             //---------
-//             // request = new Simulation('../HiperView/data/7222020.json');
-//             // request = new Simulation('../HiperView/data/Tue Aug 04 2020 16_00_00 GMT-0500 (Central Daylight Time) Thu Aug 06 2020 16_00_00 GMT-0500 (Central Daylight Time).json');
-//             // request = new Simulation('../HiperView/data/8122020.json');
-//             // request = new Simulation('../HiperView/data/814_821_2020.json');
-//             debugger
-//             serviceListattr = ["power","mem_power","mem_usage"];
-//             serviceLists = [{
-//                 "text": "power",
-//                 "id": 0,
-//                 "enable": true,
-//                 "sub": [{"text": "power", "id": 0, "enable": true, "idroot": 0, "angle": 0, "range": [0, 800]}]
-//             },{
-//                 "text": "mem_power",
-//                 "id": 1,
-//                 "enable": true,
-//                 "sub": [{"text": "mem_power", "id": 0, "enable": true, "idroot": 1, "angle": 0, "range": [0, 300]}]
-//             },{
-//                 "text": "mem_usage",
-//                 "id": 2,
-//                 "enable": true,
-//                 "sub": [{"text": "mem_usage", "id": 0, "enable": true, "idroot": 2, "angle": 0, "range": [0, 100]}]
-//             }];
-//             serviceFullList = [];
-//             serviceLists.forEach(s=>s.sub.forEach(ss=>serviceFullList.push(ss)));
-
-//             serviceList_selected = [{"text": "power", "index": 0},{"text": "mem_power", "index": 1},{"text": "mem_usage", "index": 2}];
-//             alternative_service = ["power","mem_power","mem_usage"];
-//             alternative_scale = [1,1,1];
-//             request = new Simulation(d3.json(url).then(d => {
-//                 // d=d.slice(0,1920)
-//                 const data = d;
-//                 // d3.select('#dataTime').text(new Date(data.time_stamp[0]* 1000).toDateString());
-//                 getServiceSet(data.nodes_info);
-//                 // serviceControl();
-//                 data.time_stamp = data.time_stamp.map(d => d * 1000000000);
-//                 return handleInputSlumrData(data);
-//             }));
-//         }
-//     } catch (e) {
-//         // request = new Simulation('../HiperView/data/8122020.json');
-//         // request = new Simulation('../HiperView/data/814_821_2020.json');
-//         // request = new Simulation('../HiperView/data/9214_9215_2020.json');
-//         request = new Simulation('src/data/922020-932020-145000.json');
-//         // request = new Simulation('../HiperView/data/Tue Aug 04 2020 16_00_00 GMT-0500 (Central Daylight Time) Thu Aug 06 2020 16_00_00 GMT-0500 (Central Daylight Time).json');
-//         // request = new Simulation('../HiperView/data/Tue Aug 04 2020 15_45_00 GMT-0500 (Central Daylight Time) Thu Aug 06 2020 16_00_00 GMT-0500 (Central Daylight Time).json');
-//     }
-//     updateProcess({percentage: 5, text: 'Load UI...'})
-//     initMenu();
-//     updateProcess({percentage: 15, text: 'Preprocess data...'});
-//     initdraw();
-//     toggleControlpanel();
-//     initTimeElement();
-//     // queryLayout().then(()=>request.request());
-// });
-
 function initTimeElement() {
-    // request.onFinishQuery.push(queryData);
     request.onDataChange.push((data) => {
         updateProcess({percentage: 50, text: 'Preprocess data'})
         setTimeout(() => {
@@ -993,7 +816,6 @@ function initTimeElement() {
             drawJobList();
             initdrawGantt();
             drawGantt();
-            // timelineControl.play.bind(timelineControl)();
             drawUserList();
             drawComputeList();
             updateProcess();
