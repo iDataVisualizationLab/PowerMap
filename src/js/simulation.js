@@ -13,6 +13,7 @@ class Simulation {
     onDataChange=[];
     onUpdateTime=[];
     onStartQuery=()=>{};
+    
     constructor(url) {
         this.updateData.bind(this)(url);
     }
