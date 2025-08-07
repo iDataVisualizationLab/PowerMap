@@ -336,7 +336,7 @@ let MapSetting = function () {
     };
 
     function handleData() {
-        console.log(scheme.data)
+        // console.log(scheme.data)
         jobsObj = {};
         computersObj = {};
         usersObj = {};
@@ -416,7 +416,7 @@ let MapSetting = function () {
             tableData[d.key].id = d.key;
             d.order = i
         })
-        console.log(_computers,jobsObj,computersObj,usersObj,linkob,tableData,users,jobs,computers,linkdata)
+        // console.log(_computers,jobsObj,computersObj,usersObj,linkob,tableData,users,jobs,computers,linkdata)
     }
 
     function handleCollapseJobs(u) {
@@ -499,7 +499,7 @@ let MapSetting = function () {
 
                 });
             });
-            console.log('compute_tsnedata',compute_tsnedata)
+            // console.log('compute_tsnedata',compute_tsnedata)
             let summary = serviceFullList.map((s, si) => {
                 let min = Infinity;
                 let max = -Infinity;
@@ -574,7 +574,9 @@ let MapSetting = function () {
             // add link to job
             jobsObj[jobKey]._node_list = jobsObj[jobKey].node_list.slice();
             jobsObj[jobKey].node_list = [compKey];
+            jobsObj[jobKey].job_ids = job_ids;
             jobsObj[jobKey].links[compKey] = compKey + '|' + jobKey;
+            // console.log('collapse job', u.key, jobsObj[jobKey], computersObj[compKey], linkob[compKey + '|' + jobKey]);
         }
         jobs = d3.values(jobsObj);
         computers = d3.values(computersObj);
@@ -605,6 +607,7 @@ let MapSetting = function () {
             g.select('.job_title').classed('hide', true);
         }
         let jobNode = nodeg.selectAll('.jobNode').data(jobs, function (d) {
+            // console.log('jobNode', d)
             return d.key
         });
         jobNode.exit().remove();
@@ -643,8 +646,8 @@ let MapSetting = function () {
             }
         });
         jobNode.select('.lelftext').text(d => `#Computes: ${d.node_list.length}`)
-        jobNode.select('.righttext').text(d => d.values ? `#Jobs: ${d.values.length}` : '')
-
+        jobNode.select('.righttext').text(d => d.key ? `Job ID: ${d.key}` : '')
+        // console.log('jobNode', jobNode)
         jobNode.selectAll('path').style('stroke', 'black').style('stroke-width', d => d.values ? Jobscale(d.values.length) : 1.5);
         return jobNode;
     }
@@ -1546,7 +1549,7 @@ let MapSetting = function () {
                 }
             });
             alldataPoint.sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
-            console.log(alldataPoint)
+            // console.log(alldataPoint)
             for (let i = 0; i < 10; i++) {
                 const step = alldataPoint[i].timestep;
                 computersObj[alldataPoint[i].name].highlightData.notEmpty = true;

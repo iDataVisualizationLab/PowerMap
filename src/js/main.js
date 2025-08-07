@@ -803,11 +803,49 @@ function handleInputSlumrData(data) {
     data.jobs_info = jobs_info;
     return data;
 }
+function updateServiceRanges(data) {
+  const metrics = serviceListattr; // like ["system_power", "cpu_power", ...]
+  const rangeMap = {};
+
+  // Initialize min/max for each metric
+  for (const metric of metrics) {
+    rangeMap[metric] = { min: Infinity, max: -Infinity };
+  }
+
+  // Loop through nodes and update min/max values
+  for (const node in data.nodes_info) {
+    const info = data.nodes_info[node];
+    metrics.forEach(metric => {
+      const values = (info[metric] || []).flat(); // Flatten 2D array if needed
+      for (const v of values) {
+        if (v != null && !isNaN(v)) {
+          rangeMap[metric].min = Math.min(rangeMap[metric].min, v);
+          rangeMap[metric].max = Math.max(rangeMap[metric].max, v);
+        }
+      }
+    });
+  }
+
+  // Update serviceLists.sub.range
+  for (const service of serviceLists) {
+    const metric = service.text;
+    const r = rangeMap[metric];
+    if (r.min !== Infinity && r.max !== -Infinity) {
+      service.sub[0].range = [Math.floor(r.min), Math.ceil(r.max)];
+    }
+  }
+
+  console.log("Updated ranges:", serviceLists.map(s => ({
+    metric: s.text,
+    range: s.sub[0].range
+  })));
+}
 
 function initTimeElement() {
     request.onDataChange.push((data) => {
         updateProcess({percentage: 50, text: 'Preprocess data'})
         setTimeout(() => {
+          updateServiceRanges(data);
             d3.select('#dataTime').text(new Date(data.time_stamp[0]).toDateString());
             serviceControl();
             handleRankingData(data);
