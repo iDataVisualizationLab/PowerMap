@@ -4,7 +4,9 @@ const JOB = 'jobs_info';
 const JOBNAME = 'job_name';
 const USER = 'user_name';
 let mode = 'historical'; // 'realTime' or 'historical'
-const timeFormat = d3.timeFormat('%Y-%m-%dT%H:%M:%S-05:00');
+const timeFormat = d3.timeFormat('%Y-%m-%dT%H:%M:%S-06:00');
+let sampleMinTime = null;
+let sampleMaxTime = null;
 // layout
 let Layout = {
     data: {},
@@ -114,26 +116,24 @@ function renderModeMenu() {
   // Handle time range changes
   d3.select('#realTimeRange')
     .on('change', function () {
-      const selected = +this.value;
-      const intervalSelect = d3.select('#realTimeInterval');
-      const intervalBox = d3.select('#intervalContainer');
-      const startEndBox = d3.select('#startEndContainer');
-      const processBtn = d3.select('#processBtn');
-
-      if (selected === -1) {
-        intervalBox.style('display', 'none');
-        startEndBox.style('display', null);      // show time inputs
-        processBtn.style('display', null);       // show Process button
-      } else if (selected === -3) {
-        intervalBox.style('display', 'none');
-        startEndBox.style('display', 'none');
-        processBtn.style('display', 'none');
-        loadSampleData()
-      }
-      else {
-        intervalBox.style('display', null);      // show interval
-        startEndBox.style('display', 'none');    // hide time inputs
-        processBtn.style('display', 'none');     // hide button
+        const selected = +this.value;
+        const intervalSelect = d3.select('#realTimeInterval');
+        const intervalBox = d3.select('#intervalContainer');
+        const startEndBox = d3.select('#startEndContainer');
+        const processBtn = d3.select('#processBtn');
+        if (selected === -1) {
+          intervalBox.style('display', 'none');
+          startEndBox.style('display', null);
+          processBtn.style('display', null);
+        } else if (selected === -3) {
+          intervalBox.style('display', 'none');
+          startEndBox.style('display', null);
+          processBtn.style('display', null);
+          loadSampleData()
+        } else {
+          intervalBox.style('display', null); // show interval
+          startEndBox.style('display', 'none'); // hide time inputs
+          processBtn.style('display', 'none'); // hide button
 
         // Update interval options
         const intervalOptions = INTERVALS[selected] || [];
@@ -458,6 +458,7 @@ async function fetchDataAndProcess(Params, isRealTime = true) {
                     cpu_power: Array(len).fill().map(() => []),
                     // gpu_mem: Array(len).fill().map(() => []),
                     // gpu_usage: Array(len).fill().map(() => []),
+                    memory_usage: Array(len).fill().map(() => []),
                     temperature: Array(len).fill().map(() => []),
                     cpu_usage: Array(len).fill().map(() => []),
                     dram_usage: Array(len).fill().map(() => []),
@@ -466,7 +467,6 @@ async function fetchDataAndProcess(Params, isRealTime = true) {
                     jobName: []
                 };
             }
-
             nodes_info[node].cpus[idx] = entry.cores ?? [];
             nodes_info[node].job_id[idx] = entry.jobs ?? [];
             nodes_info[node].system_power[idx] = entry.system_power_consumption ?? [];
@@ -474,6 +474,7 @@ async function fetchDataAndProcess(Params, isRealTime = true) {
             nodes_info[node].cpu_power[idx] = entry.cpu_power_consumption ?? [];
             // nodes_info[node].gpu_mem[idx] = entry.gpu_memory_usage ?? [];
             // nodes_info[node].gpu_usage[idx] = entry.gpu_usage ?? [];
+            nodes_info[node].memory_usage[idx] = entry.memory_usage ?? [];
             nodes_info[node].temperature[idx] = entry.temperature ?? [];
             nodes_info[node].cpu_usage[idx] = entry.cpu_usage ?? [];
             nodes_info[node].dram_usage[idx] = entry.dram_usage ?? [];
@@ -605,19 +606,90 @@ function startRealTimePolling(isRealTime = true) {
   realTimeIntervalId = setInterval(fetchAndUpdate, intervalMs);
 }
 
+// async function loadHistoricalAcrossRanges() {
+//   const start = document.getElementById('startTime')?.value;
+//   const end = document.getElementById('endTime')?.value;
+//   if (!start || !end) {
+//     console.warn('Start or End time is missing.');
+//     return;
+//   }
+
+//   const data = await fetchAllNodeRanges(start, end);
+//   request = new Simulation(Promise.resolve(data)); // you might need to adapt Simulation constructor
+//   initdraw();
+//   initTimeElement();
+// }
+
 async function loadHistoricalAcrossRanges() {
   const start = document.getElementById('startTime')?.value;
   const end = document.getElementById('endTime')?.value;
+
   if (!start || !end) {
     console.warn('Start or End time is missing.');
     return;
   }
 
-  const data = await fetchAllNodeRanges(start, end);
-  request = new Simulation(Promise.resolve(data)); // you might need to adapt Simulation constructor
-  initdraw();
-  initTimeElement();
+  if (document.getElementById('realTimeRange').value == -3) {
+    const data = await fetchDataAndProcess({}, false);
+
+    // Convert to timestamps (milliseconds)
+    const startDate = new Date(start).getTime() * 1e6; // Convert to milliseconds
+    const endDate = new Date(end).getTime() * 1e6; // Convert to milliseconds
+
+    console.log('Start date:', startDate, 'End date:', endDate);
+    console.log('Data timestamps:', data.time_stamp);
+    // Ensure time_stamp is in milliseconds
+    data.time_stamp = data.time_stamp.map(d => d instanceof Date ? d.getTime() : d);
+    console.log('Data timestamps:', data.time_stamp);
+
+    const validIndexes = data.time_stamp
+      .map((t, i) => ({ t, i }))
+      .filter(({ t }) => t >= startDate && t <= endDate)
+      .map(({ i }) => i);
+
+    const filteredTimestamps = validIndexes.map(i => data.time_stamp[i]);
+
+    const filteredNodesInfo = {};
+    for (const [node, metrics] of Object.entries(data.nodes_info)) {
+      const filteredMetrics = {};
+      for (const [key, arr] of Object.entries(metrics)) {
+        filteredMetrics[key] = Array.isArray(arr)
+          ? validIndexes.map(i => arr[i])
+          : arr;
+      }
+      filteredNodesInfo[node] = filteredMetrics;
+    }
+
+    const filteredData = {
+      ...data,
+      time_stamp: filteredTimestamps,
+      nodes_info: filteredNodesInfo,
+    };
+
+    request = new Simulation(Promise.resolve(filteredData));
+
+    d3.select('#chartContainer').selectAll("*").remove();
+    updateProcess({
+      percentage: 5,
+      text: 'Load UI...'
+    })
+    initMenu();
+    updateProcess({
+      percentage: 15,
+      text: 'Preprocess data...'
+    });
+    initdraw();
+    initTimeElement();
+  }
+ else {
+    // Regular fetch mode
+    const data = await fetchAllNodeRanges(start, end);
+    request = new Simulation(Promise.resolve(data));
+    initdraw();
+    initTimeElement();
+  }
 }
+
 function loadHistoricalData() {
   if (realTimeIntervalId) clearInterval(realTimeIntervalId);
 
@@ -635,24 +707,59 @@ function loadHistoricalData() {
     initTimeElement();
 }
 
-function loadSampleData() {
+async function loadSampleData() {
   if (realTimeIntervalId) clearInterval(realTimeIntervalId);
-  request = new Simulation(fetchDataAndProcess({}, false));
-  initdraw();
-    initTimeElement();
-}
-d3.selectAll('#navMode li a').on('click', function () {
-  const mode = d3.select(this.parentNode).classed('realtime') ? 'realTime' : 'historical';
-  renderModeMenu(mode);
-  setTimeout(() => {
-    if (mode === 'realTime') {
-      startRealTimePolling();
-    } else {
-      //  loadHistoricalData();
-       loadSampleData();
+  const data = await fetchDataAndProcess({}, false);
+
+  // Store min/max times from sample data
+  const timestamps = data.time_stamp.map(ts => new Date(ts / 1e6)); // Convert from ns to ms
+const toUTCMinus6 = ts => new Date(ts - 6 * 60 * 60 * 1000);
+
+sampleMinTime = toUTCMinus6(Math.min(...timestamps));
+sampleMaxTime = toUTCMinus6(Math.max(...timestamps));
+
+
+
+  if (sampleMinTime && sampleMaxTime) {
+    const startInput = d3.select('#startTime').node();
+    const endInput = d3.select('#endTime').node();
+
+    // Format: YYYY-MM-DDTHH:mm
+    const toInputValue = d => d.toISOString().slice(0, 16);
+
+    const minStr = toInputValue(sampleMinTime);
+    const maxStr = toInputValue(sampleMaxTime);
+
+    // 👇 Limit the allowed selectable range
+    startInput.min = endInput.min = minStr;
+    startInput.max = endInput.max = maxStr;
+
+    // Optional: set default values
+    startInput.value = minStr;
+    endInput.value = maxStr;
     }
-  }, 100);
-});
+    request = new Simulation(Promise.resolve(data));
+
+    updateProcess({
+      percentage: 5,
+      text: 'Load UI...'
+    })
+    initMenu();
+    updateProcess({
+      percentage: 15,
+      text: 'Preprocess data...'
+    });
+    initdraw();
+    initTimeElement();
+    }
+    d3.selectAll('#navMode li a').on('click', function () {
+      const mode = d3.select(this.parentNode).classed('realtime') ? 'realTime' : 'historical';
+      renderModeMenu(mode);
+      setTimeout(() => {
+        loadSampleData();
+
+      }, 100);
+    });
 
 $(document).ready(function () {
     try {
@@ -669,7 +776,7 @@ $(document).ready(function () {
         //     "gpu_mem", "gpu_usage", "cpu_usage", "dram_usage",
         // ];
         serviceListattr = [
-            "system_power","cpu_power", "dram_power", "temperature", "cpu_usage", "dram_usage",
+            "system_power","cpu_power", "temperature", "cpu_usage", "memory_usage",
         ];
 
         serviceLists = serviceListattr.map((key, index) => ({
@@ -682,7 +789,7 @@ $(document).ready(function () {
                 enable: true,
                 idroot: index,
                 angle: 0,
-                range: index == 3 ? [0, 100] : [0, 3000],
+                range: [0, 3000],
             }]
         }));
         serviceFullList = [];
@@ -809,35 +916,35 @@ function updateServiceRanges(data) {
 
   // Initialize min/max for each metric
   for (const metric of metrics) {
-    rangeMap[metric] = { min: Infinity, max: -Infinity };
+   rangeMap[metric] = { min: Infinity, max: -Infinity, sum: 0, count: 0 };
   }
-
   // Loop through nodes and update min/max values
   for (const node in data.nodes_info) {
     const info = data.nodes_info[node];
     metrics.forEach(metric => {
-      const values = (info[metric] || []).flat(); // Flatten 2D array if needed
-      for (const v of values) {
-        if (v != null && !isNaN(v)) {
-          rangeMap[metric].min = Math.min(rangeMap[metric].min, v);
-          rangeMap[metric].max = Math.max(rangeMap[metric].max, v);
-        }
-      }
+      const values = (info[metric] || []).flat();
+      rangeMap[metric].min = Math.min(rangeMap[metric].min, Math.min(...values));
+      rangeMap[metric].max = Math.max(rangeMap[metric].max, Math.max(...values));
+      rangeMap[metric].sum += values.reduce((a, b) => a + b, 0);
+rangeMap[metric].count += values.length;
     });
   }
 
-  // Update serviceLists.sub.range
-  for (const service of serviceLists) {
-    const metric = service.text;
-    const r = rangeMap[metric];
-    if (r.min !== Infinity && r.max !== -Infinity) {
-      service.sub[0].range = [Math.floor(r.min), Math.ceil(r.max)];
-    }
+for (const service of serviceLists) {
+  const metric = service.idroot != null ? serviceListattr[service.idroot] : service.text;
+  const r = rangeMap[metric];
+  if (r && r.min !== Infinity && r.max !== -Infinity) {
+    service.sub[0].range = [Math.floor(r.min), Math.ceil(r.max)];
+    service.sub[0].defaultThreshold = rangeMap[metric].count > 0
+  ? Math.floor(rangeMap[metric].sum / rangeMap[metric].count)
+  : 0;
   }
+}
 
   console.log("Updated ranges:", serviceLists.map(s => ({
     metric: s.text,
-    range: s.sub[0].range
+    range: s.sub[0].range,
+    defaultThreshold: s.sub[0].defaultThreshold
   })));
 }
 
