@@ -434,7 +434,7 @@ async function fetchDataAndProcess(Params, isRealTime = true) {
     }).then(res => res.json());
   } else {
     // Historical mode: Load from local file
-    apiData = await fetch('src/data/combined_data2.json') // replace with your actual local path
+    apiData = await fetch('src/data/combined_data2_reduced.json') // replace with your actual local path
       .then(res => res.json());
   }
 
@@ -460,6 +460,7 @@ async function fetchDataAndProcess(Params, isRealTime = true) {
                     // gpu_usage: Array(len).fill().map(() => []),
                     memory_usage: Array(len).fill().map(() => []),
                     temperature: Array(len).fill().map(() => []),
+                    fans: Array(len).fill().map(() => []),
                     cpu_usage: Array(len).fill().map(() => []),
                     dram_usage: Array(len).fill().map(() => []),
                     dram_power: Array(len).fill().map(() => []),
@@ -476,6 +477,7 @@ async function fetchDataAndProcess(Params, isRealTime = true) {
             // nodes_info[node].gpu_usage[idx] = entry.gpu_usage ?? [];
             nodes_info[node].memory_usage[idx] = entry.memory_usage ?? [];
             nodes_info[node].temperature[idx] = entry.temperature ?? [];
+            nodes_info[node].fans[idx] = entry.fans ?? [];
             nodes_info[node].cpu_usage[idx] = entry.cpu_usage ?? [];
             nodes_info[node].dram_usage[idx] = entry.dram_usage ?? [];
             nodes_info[node].dram_power[idx] = (entry.dram_power_consumption ?? []).map(v => v / 1000);
@@ -776,7 +778,7 @@ $(document).ready(function () {
         //     "gpu_mem", "gpu_usage", "cpu_usage", "dram_usage",
         // ];
         serviceListattr = [
-            "system_power","cpu_power", "temperature", "cpu_usage", "memory_usage",
+            "system_power","cpu_power", "temperature", "cpu_usage", "memory_usage", "fans"
         ];
 
         serviceLists = serviceListattr.map((key, index) => ({
