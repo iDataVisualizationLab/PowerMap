@@ -32,6 +32,25 @@ function serviceControl(){
             .attr('data-value',(d)=>d)
             .attr('selected',(d)=>d.idroot===serviceSelected?'':null)
             .text(d=>d.text);
+//     d3.select('#flowType')
+//         .on('change', function () {
+//             serviceSelected = +$(this).val();
+//             const metricName = serviceFullList[serviceSelected].text; // e.g., "cpu_power"
+//             updateProcess({
+//                 percentage: 50,
+//                 text: 'filtering...'
+//             });
+//             loadMetricIntoBaseAndDraw(metricName); // <— merge into base, keep jobs, etc.
+//         })
+//   .selectAll('option')
+//   .data(vizservice)
+//   .join('option')
+//   .attr('value', d => d.idroot)
+//   .attr('class', d => d.text === 'User' ? 'innerName' : null)
+//   .attr('data-value', d => d)
+//   .attr('selected', d => d.idroot === serviceSelected ? '' : null)
+//   .text(d => d.text);
+
     d3.select('#jobValueName')
         .selectAll('option')
         .data(serviceFullList)

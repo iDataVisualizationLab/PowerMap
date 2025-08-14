@@ -59,6 +59,44 @@ const INTERVALS = {
     { label: '60m', value: 60 * 60000, default: true },
   ]
 };
+
+
+////////////////////////////////////////////////////////////////////////////////////////////
+// Keep the canonical base data (from combined2) here
+let baseData = null;
+
+// Cache for per-metric JSONs (avoid refetching)
+const metricCache = new Map();
+
+// Where your Python script outputs JSONs:
+const METRIC_DIRS = [
+  'src/data/metrics_output/with_data',
+  'src/data/metrics_output/no_data',
+];
+
+// use the same filename sanitizing as in the Python exporter
+function metricFileName(name) {
+  return name.replace(/[ ./\\]/g, '_') + '.json';
+}
+function guessUnit(oneTs) {
+  // heuristic: seconds ~ 1e9, ms ~ 1e12, ns ~ 1e15
+  const v = Math.abs(+oneTs || 0);
+  if (v >= 1e14) return 'ns';
+  if (v >= 1e11) return 'ms';
+  return 's';
+}
+function convertBetween(from, to, t) {
+  if (from === to) return t;
+  if (from === 's' && to === 'ms') return t * 1e3;
+  if (from === 's' && to === 'ns') return t * 1e9;
+  if (from === 'ms' && to === 's') return Math.floor(t / 1e3);
+  if (from === 'ms' && to === 'ns') return t * 1e6;
+  if (from === 'ns' && to === 'ms') return Math.floor(t / 1e6);
+  if (from === 'ns' && to === 's') return Math.floor(t / 1e9);
+  return t;
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////
 function renderModeMenu() {
   const container = d3.select('#timeSetting');
   container.selectAll('*').remove();
@@ -422,6 +460,92 @@ nodes_info[node].dram_power[idx] = (entry.dram_power_consumption ?? []).map(v =>
     })
 }
 
+
+
+function toNs(arr){ if(!arr?.length) return []; const u=guessUnit(arr[0]); return arr.map(t=>convertBetween(u,'ns',+t)); }
+function medianStep(ns){
+  const d=[]; for (let i=1;i<ns.length;i++){ const x=ns[i]-ns[i-1]; if(x>0&&Number.isFinite(x)) d.push(x); }
+  d.sort((a,b)=>a-b); return d.length ? d[Math.floor(d.length/2)] : 1;
+}
+function buildNearestIndex(baseNs, metricNs, tol){
+  const idx = new Array(baseNs.length).fill(-1);
+  if (!metricNs.length) return idx;
+  let j = 0;
+  for (let i=0;i<baseNs.length;i++){
+    const t = baseNs[i];
+    while (j+1<metricNs.length && Math.abs(metricNs[j+1]-t) <= Math.abs(metricNs[j]-t)) j++;
+    if (Math.abs(metricNs[j]-t) <= tol) idx[i] = j;
+  }
+  return idx;
+}
+
+async function addMetricFromFile(base, metricName){
+  const metricJson = await fetchMetricJSON(metricName); // your existing loader
+  const baseNs = base.time_stamp;                         // ns
+  const mTimes = toNs(metricJson.time_stamp || []);       // normalize
+  const tol    = Math.max(1, medianStep(baseNs)/2);
+  const mapIdx = buildNearestIndex(baseNs, mTimes, tol);
+
+  for (const node of Object.keys(metricJson.nodes_info || {})){
+    const srcNode = metricJson.nodes_info[node];
+    const srcArr  = srcNode?.[metricName];
+    if (!Array.isArray(srcArr)) continue;
+
+    // time-aligned destination
+    const dest = Array(baseNs.length).fill(0).map(()=>[]);
+    for (let i=0;i<mapIdx.length;i++){
+      const j = mapIdx[i];
+      if (j>=0 && srcArr[j]!=null){
+        const v = srcArr[j];
+        dest[i] = Array.isArray(v) ? v : [v];   // keep as array so .flat() logic still works
+      }
+    }
+
+    if (!base.nodes_info[node]){
+      const blank = Array(baseNs.length).fill(0).map(()=>[]);
+      base.nodes_info[node] = { cpus: blank.slice(), job_id: blank.slice() };
+    }
+    base.nodes_info[node][metricName] = dest;
+  }
+}
+
+async function preloadAllMetricsWithData(base, {maxParallel=4, minFill=0.001} = {}){
+  const names = await getAvailableMetrics([]); // your CSV-based discovery
+
+  // quick test to skip metrics that are effectively empty
+  async function hasAnyData(name){
+    try{
+      const j = await fetchMetricJSON(name);
+      for (const node of Object.keys(j.nodes_info || {})){
+        const arr = j.nodes_info[node]?.[name];
+        if (Array.isArray(arr) && arr.some(x => Array.isArray(x) ? x.length : (x != null))) {
+          return true;
+        }
+      }
+    }catch(e){}
+    return false;
+  }
+
+  const queue = [];
+  for (const m of names) if (await hasAnyData(m)) queue.push(m);
+
+  const loaded = [];
+  async function worker(){
+    while(queue.length){
+      const name = queue.shift();
+      try{
+        await addMetricFromFile(base, name);
+        loaded.push(name);
+      }catch(e){
+        console.warn('Skip metric', name, e);
+      }
+    }
+  }
+  await Promise.all(Array.from({length: Math.min(maxParallel, queue.length)}, worker));
+  return loaded;
+}
+
+
 async function fetchDataAndProcess(Params, isRealTime = true) {
   let apiData;
 
@@ -587,11 +711,22 @@ async function fetchDataAndProcess(Params, isRealTime = true) {
             });
         });
 
-        return {
-            time_stamp: allTimes.map(t => t * 1e9),
-            nodes_info,
-            jobs_info: final_jobs_info
-        };
+        // return {
+        //     time_stamp: allTimes.map(t => t * 1e9),
+        //     nodes_info,
+        //     jobs_info: final_jobs_info
+        // };
+        const baseObj = {
+  time_stamp: allTimes.map(t => t * 1e9),
+  nodes_info,
+  jobs_info: final_jobs_info
+};
+
+// Preload ALL metrics that actually have data (with a small concurrency cap)
+await preloadAllMetricsWithData(baseObj, { maxParallel: 3 });
+console.log(baseObj)
+// Now return the fully-populated object
+return baseObj;
 }
 let realTimeIntervalId;
 function startRealTimePolling(isRealTime = true) {
@@ -607,6 +742,191 @@ function startRealTimePolling(isRealTime = true) {
     initTimeElement();
   realTimeIntervalId = setInterval(fetchAndUpdate, intervalMs);
 }
+
+//////////////////////////////////////////////////////////////////////////////////////////
+async function fetchMetricJSON(metricName) {
+  if (metricCache.has(metricName)) return metricCache.get(metricName);
+  const file = metricFileName(metricName);
+  for (const dir of METRIC_DIRS) {
+    try {
+      const res = await fetch(`${dir}/${file}`, { cache: 'no-store' });
+      if (res.ok) {
+        const json = await res.json();
+        metricCache.set(metricName, json);
+        return json;
+      }
+    } catch (e) { /* try next folder */ }
+  }
+  throw new Error(`Metric JSON not found: ${file}`);
+}
+
+/** Merge only one metric into a *copy* of baseData, aligned to base time_axis */
+function mergeMetricIntoBase(base, metricJson, metricName) {
+  const result = {
+    ...base,
+    nodes_info: { ...base.nodes_info }
+  };
+
+  // ---- Make sure both are numbers (not Date objects)
+  const baseTimesRaw = (base.time_stamp || []).map(t => (t instanceof Date ? +t : +t));
+  const metricTimesRaw = (metricJson.time_stamp || []).map(t => +t);
+
+  // ---- Detect units and convert metric → base unit
+  const baseUnit   = guessUnit(baseTimesRaw[0]);    // 'ns' | 'ms' | 's'
+  const metricUnit = guessUnit(metricTimesRaw[0]);
+
+  const toUnit = (v, from, to) => {
+    if (from === to) return v;
+    const mul = u => (u === 's' ? 1 : u === 'ms' ? 1e6 : 1e9);
+    return Math.floor(v * (mul(to)/ mul(from)));
+  };
+
+  const baseTimes   = baseTimesRaw.slice(); // keep in base unit
+  const metricTimes = metricTimesRaw.map(t => toUnit(t, metricUnit, baseUnit));
+
+  // ---- Build nearest-neighbor index with tolerance (½ base step)
+  const steps = [];
+  for (let i = 1; i < baseTimes.length; i++) {
+    const d = baseTimes[i] - baseTimes[i - 1];
+    if (isFinite(d) && d > 0) steps.push(d);
+  }
+  steps.sort((a, b) => a - b);
+  const baseStep = steps.length ? steps[Math.floor(steps.length / 2)] : Math.max(1, baseTimes[1] - baseTimes[0] || 1);
+  const tol = Math.max(1, baseStep / 2);
+
+  const idxMap = new Array(baseTimes.length).fill(-1);
+  let i = 0, j = 0;
+  while (i < baseTimes.length && j < metricTimes.length) {
+    const dt = metricTimes[j] - baseTimes[i];
+    if (Math.abs(dt) <= tol) { idxMap[i] = j; i++; j++; }
+    else if (dt < -tol)      { j++; }
+    else                     { i++; }
+  }
+
+  // ---- Ensure metric nodes exist in result
+  const metricNodes = Object.keys(metricJson.nodes_info || {});
+  for (const node of metricNodes) {
+    if (!result.nodes_info[node]) {
+      const blank = Array(baseTimes.length).fill(0).map(() => []);
+      result.nodes_info[node] = { cpus: blank.slice(), job_id: blank.slice() };
+      (serviceListattr || []).forEach(k => (result.nodes_info[node][k] = blank.slice()));
+    }
+  }
+
+  // ---- Write only the selected metric for nodes present in metricJson
+  for (const node of metricNodes) {
+    const srcNode = metricJson.nodes_info[node];
+    const srcArr  = srcNode && srcNode[metricName];
+    if (!Array.isArray(srcArr)) continue;
+
+    const aligned = Array(baseTimes.length).fill(0).map(() => []);
+    for (let bi = 0; bi < idxMap.length; bi++) {
+      const mj = idxMap[bi];
+      if (mj >= 0 && mj < srcArr.length) {
+        const v = srcArr[mj];
+        aligned[bi] = Array.isArray(v) ? v : [v];  // keep array-per-time shape
+      }
+    }
+    result.nodes_info[node] = { ...result.nodes_info[node], [metricName]: aligned };
+  }
+
+  // NOTE: result.time_stamp is left exactly as in base (numbers or Dates).
+  return result;
+}
+
+
+async function loadMetricIntoBaseAndDraw(metricName) {
+  console.log('Loading metric:', metricName);
+  if (!baseData) {
+    console.warn('Base data not ready yet; load sample/historical first.');
+    return;
+  }
+  updateProcess({ percentage: 45, text: `Loading ${metricName}...` });
+  try {
+    const metricJson = await fetchMetricJSON(metricName);
+    console.log(`Merging metric ${metricName}`, metricJson);
+    const merged = mergeMetricIntoBase(baseData, metricJson, metricName);
+    console.log(`Merged result for ${metricName}`, merged);
+    request = new Simulation(Promise.resolve(merged));
+    console.log(request);
+    setTimeout(() => {
+      subObject.graphicopt({ selectedService: serviceSelected }).draw();
+      drawColorLegend();
+      updateProcess();
+      
+    }, 0);
+  } catch (e) {
+    console.warn(e);
+    updateProcess();
+    // fallback: leave base as-is but redraw UI to reflect selection
+    request = new Simulation(Promise.resolve(baseData));
+    console.log(request);
+    setTimeout(() => {
+      subObject.graphicopt({ selectedService: serviceSelected }).draw();
+      drawColorLegend();
+    }, 0);
+  }
+}
+
+
+
+
+// Read available metrics from the Python summary CSVs; fall back to current list.
+async function getAvailableMetrics(fallbackList = []) {
+  // console.log(fallbackList)
+  const names = new Set();
+  try {
+    const rows = await d3.csv('src/data/metrics_output/metrics_with_data.csv');
+    rows.forEach(r => r.metric && names.add(r.metric));
+  } catch (e) {}
+  // try {
+  //   const rows = await d3.csv('src/data/metrics_output/metrics_without_data.csv');
+  //   rows.forEach(r => r.metric && names.add(r.metric));
+  // } catch (e) {}
+  // console.log('Discovered metrics:', names);
+  return names.size ? fallbackList.slice().concat(Array.from(names).sort()) : fallbackList.slice();
+}
+
+function rebuildServiceListsFromMetrics(metricNames) {
+  const prevName = (serviceFullList && serviceFullList[serviceSelected])
+    ? serviceFullList[serviceSelected].text
+    : null;
+
+  serviceListattr = metricNames.slice();
+  serviceLists = serviceListattr.map((key, index) => ({
+    text: key,
+    id: index,
+    enable: true,
+    sub: [{
+      text: key,
+      id: 0,
+      enable: true,
+      idroot: index,
+      angle: 0,
+      range: [0, 3000],
+    }]
+  }));
+
+  serviceFullList = [];
+  serviceLists.forEach(s => s.sub.forEach(ss => serviceFullList.push(ss)));
+
+  if (prevName) {
+    const i = serviceFullList.findIndex(d => d.text === prevName);
+    serviceSelected = i >= 0 ? i : 0;
+  } else {
+    serviceSelected = 0;
+  }
+
+  serviceControl();  // re-render dropdown with new list
+}
+
+async function initFlowTypeFromFiles() {
+  const metrics = await getAvailableMetrics(serviceListattr || []);
+  console.log('Metrics for services:', metrics);
+  rebuildServiceListsFromMetrics(metrics);
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////
 
 // async function loadHistoricalAcrossRanges() {
 //   const start = document.getElementById('startTime')?.value;
@@ -712,7 +1032,9 @@ function loadHistoricalData() {
 async function loadSampleData() {
   if (realTimeIntervalId) clearInterval(realTimeIntervalId);
   const data = await fetchDataAndProcess({}, false);
-
+  ////////////////////////////////////////////////////////////////////////////////////
+  baseData = data; 
+  /////////////////////////////////////////////////////////////////////////////////////
   // Store min/max times from sample data
   const timestamps = data.time_stamp.map(ts => new Date(ts / 1e6)); // Convert from ns to ms
 const toUTCMinus6 = ts => new Date(ts - 6 * 60 * 60 * 1000);
@@ -777,10 +1099,15 @@ $(document).ready(function () {
         //     "system_power", "gpu_power", "cpu_power", "dram_power",
         //     "gpu_mem", "gpu_usage", "cpu_usage", "dram_usage",
         // ];
-        serviceListattr = [
-            "system_power","cpu_power", "temperature", "cpu_usage", "memory_usage", "fans"
-        ];
-
+        // serviceListattr = [
+        //     "system_power","cpu_power", "temperature", "cpu_usage", "memory_usage", "fans"
+        // ];
+        serviceListattr = ["system_power","cpu_power", "temperature", "cpu_usage", "memory_usage", 'ampsreading', 'availablespare', 'availablesparethreshold', 'compositetemperature', 'computepower', 'controllerbusytimelower', 'cpupower', 'cpuusage', 'cpuusagepctreading', 'dataunitsreadlower', 'dataunitswrittenlower', 'hostreadcommandslower', 'hostwritecommandslower', 'itue', 'powercycleslower', 'poweronhourslower', 'powertocoolratio', 'psuefficiency', 'psurpmreading', 'psutemperaturereading', 'rpmreading', 'sysairflowefficiency', 'sysairflowperfanpower', 'sysairflowpersysinputpower', 'sysairflowutilization', 'sysnetairflow', 'sysracktempdelta', 'systemheadroominstantaneous', 'systeminputpower', 'systemoutputpower', 'systempowerconsumption', 'temperaturereading', 'totalcpupower', 'totalfanpower', 'totalmemorypower', 'totalpsuheatdissipation', 'totalstoragepower', 'unsafeshutdownslower', 'voltagereading', 'wattsreading'];
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// debugger
+// initFlowTypeFromFiles();
+// debugger
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
         serviceLists = serviceListattr.map((key, index) => ({
             text: key,
             id: index,
