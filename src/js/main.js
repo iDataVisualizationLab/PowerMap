@@ -1100,7 +1100,7 @@ $(document).ready(function () {
         //     "gpu_mem", "gpu_usage", "cpu_usage", "dram_usage",
         // ];
         // serviceListattr = [
-        //     "system_power","cpu_power", "temperature", "cpu_usage", "memory_usage", "fans"
+        //     "system_power","cpu_power", "temperature", "cpu_usage",
         // ];
         serviceListattr = ["system_power","cpu_power", "temperature", "cpu_usage", "memory_usage", 'ampsreading', 'availablespare', 'availablesparethreshold', 'compositetemperature', 'computepower', 'controllerbusytimelower', 'cpupower', 'cpuusage', 'cpuusagepctreading', 'dataunitsreadlower', 'dataunitswrittenlower', 'hostreadcommandslower', 'hostwritecommandslower', 'itue', 'powercycleslower', 'poweronhourslower', 'powertocoolratio', 'psuefficiency', 'psurpmreading', 'psutemperaturereading', 'rpmreading', 'sysairflowefficiency', 'sysairflowperfanpower', 'sysairflowpersysinputpower', 'sysairflowutilization', 'sysnetairflow', 'sysracktempdelta', 'systemheadroominstantaneous', 'systeminputpower', 'systemoutputpower', 'systempowerconsumption', 'temperaturereading', 'totalcpupower', 'totalfanpower', 'totalmemorypower', 'totalpsuheatdissipation', 'totalstoragepower', 'unsafeshutdownslower', 'voltagereading', 'wattsreading'];
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1117,7 +1117,7 @@ $(document).ready(function () {
                 id: 0,
                 enable: true,
                 idroot: index,
-                angle: 0,
+                angle: (2 * Math.PI * index) / serviceListattr.length,
                 range: [0, 3000],
             }]
         }));
