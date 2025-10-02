@@ -558,7 +558,8 @@ async function fetchDataAndProcess(Params, isRealTime = true) {
     }).then(res => res.json());
   } else {
     // Historical mode: Load from local file
-    apiData = await fetch('src/data/combined_data2_reduced.json') // replace with your actual local path
+    apiData = await fetch('src/data/influx_to_combined.json') // replace with your actual local path
+    // apiData = await fetch('src/data/combined_data2_reduced.json') // replace with your actual local path
       .then(res => res.json());
   }
 
@@ -1102,7 +1103,13 @@ $(document).ready(function () {
         // serviceListattr = [
         //     "system_power","cpu_power", "temperature", "cpu_usage",
         // ];
-        serviceListattr = ["system_power","cpu_power", "temperature", "cpu_usage", "memory_usage", 'ampsreading', 'availablespare', 'availablesparethreshold', 'compositetemperature', 'computepower', 'controllerbusytimelower', 'cpupower', 'cpuusage', 'cpuusagepctreading', 'dataunitsreadlower', 'dataunitswrittenlower', 'hostreadcommandslower', 'hostwritecommandslower', 'itue', 'powercycleslower', 'poweronhourslower', 'powertocoolratio', 'psuefficiency', 'psurpmreading', 'psutemperaturereading', 'rpmreading', 'sysairflowefficiency', 'sysairflowperfanpower', 'sysairflowpersysinputpower', 'sysairflowutilization', 'sysnetairflow', 'sysracktempdelta', 'systemheadroominstantaneous', 'systeminputpower', 'systemoutputpower', 'systempowerconsumption', 'temperaturereading', 'totalcpupower', 'totalfanpower', 'totalmemorypower', 'totalpsuheatdissipation', 'totalstoragepower', 'unsafeshutdownslower', 'voltagereading', 'wattsreading'];
+        serviceListattr = [
+            "temperature",
+            "memory_usage",
+            "fans",
+            "system_power_consumption",
+        ];
+        // serviceListattr = ["system_power","cpu_power", "temperature", "cpu_usage", "memory_usage", 'ampsreading', 'availablespare', 'availablesparethreshold', 'compositetemperature', 'computepower', 'controllerbusytimelower', 'cpupower', 'cpuusage', 'cpuusagepctreading', 'dataunitsreadlower', 'dataunitswrittenlower', 'hostreadcommandslower', 'hostwritecommandslower', 'itue', 'powercycleslower', 'poweronhourslower', 'powertocoolratio', 'psuefficiency', 'psurpmreading', 'psutemperaturereading', 'rpmreading', 'sysairflowefficiency', 'sysairflowperfanpower', 'sysairflowpersysinputpower', 'sysairflowutilization', 'sysnetairflow', 'sysracktempdelta', 'systemheadroominstantaneous', 'systeminputpower', 'systemoutputpower', 'systempowerconsumption', 'temperaturereading', 'totalcpupower', 'totalfanpower', 'totalmemorypower', 'totalpsuheatdissipation', 'totalstoragepower', 'unsafeshutdownslower', 'voltagereading', 'wattsreading'];
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // debugger
 // initFlowTypeFromFiles();
@@ -1281,7 +1288,7 @@ function initTimeElement() {
     request.onDataChange.push((data) => {
         updateProcess({percentage: 50, text: 'Preprocess data'})
         setTimeout(() => {
-          updateServiceRanges(data);
+          // updateServiceRanges(data);
             d3.select('#dataTime').text(new Date(data.time_stamp[0]).toDateString());
             serviceControl();
             handleRankingData(data);

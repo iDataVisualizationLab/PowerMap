@@ -13,7 +13,14 @@ function queryLayout() {
 function handleData(data){
     const computers = data[COMPUTE];
     _.mapObject(computers,(d,i)=>(d.user=[],d.jobName=[]))
-    const jobs = data[JOB]; // object
+
+    const jobs = data[JOB] || {};
+    if (!Object.keys(jobs).length){
+        // No jobs → nothing to derive for users/jobName
+        return { computers, jobs: {}, jobByNames: {}, users: {} };
+    }
+
+    // const jobs = data[JOB]; // object
     const rack = Layout.data;
     const user_job = d3.nest()
         .key(d=>d.value[USER]) //user
@@ -62,13 +69,21 @@ function adjustTree(sampleS,computers){
 }
 
 // Setup the positions of outer nodes
+// function getData(d){
+//     if ( vizservice[serviceSelected].text==='User')
+//         return d.user;//?userIndex[d.user[0]]:-1;
+//     if ( vizservice[serviceSelected].text==='Radar'&&d.cluster){
+//         return d.cluster.length?d.cluster[0].name:d.cluster.name;
+//     }
+//     return d.metrics[vizservice[serviceSelected].text]
+// }
 function getData(d){
-    if ( vizservice[serviceSelected].text==='User')
-        return d.user;//?userIndex[d.user[0]]:-1;
-    if ( vizservice[serviceSelected].text==='Radar'&&d.cluster){
-        return d.cluster.length?d.cluster[0].name:d.cluster.name;
-    }
-    return d.metrics[vizservice[serviceSelected].text]
+  const sel = vizservice?.[serviceSelected]?.text;
+  if (sel === 'User') return d.user;
+  if (sel === 'Radar' && d.cluster) {
+    return Array.isArray(d.cluster) ? (d.cluster[0]?.name ?? null) : d.cluster.name;
+  }
+  return d.metrics?.[sel] ?? 0;
 }
 
 function getData_delta(d){
@@ -97,7 +112,13 @@ function data2tree(data,sampleS,computers){
                             jobName: computers?computers[c].jobName:[]
                         };
                         if (sampleS){
-                            serviceFullList.forEach(s=>item.metrics[s.text]=_.last(sampleS[c][serviceListattr[s.idroot]])[s.id]);
+                            // serviceFullList.forEach(s=>item.metrics[s.text]=_.last(sampleS[c][serviceListattr[s.idroot]])[s.id]);
+                            serviceFullList.forEach(s => {
+                                const metricKey = serviceListattr[s.idroot];
+                                const seq = sampleS?.[c]?.[metricKey];
+                                const last = Array.isArray(seq) && seq.length ? seq[seq.length - 1] : null;
+                                item.metrics[s.text] = (last && last[s.id] != null) ? last[s.id] : 0; // or null
+                            });
                             if (computers)
                                 computers[c].metric = item.metrics;
                             if (Layout.computers_old){

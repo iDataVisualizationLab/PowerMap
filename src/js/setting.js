@@ -73,8 +73,12 @@ function handleDataUrl(dataRaw) {
     let tsnedata = {};
     let data = dataRaw.nodes_info;
     sampleh.timespan = time_stamp.map(d=>d*1000);
-    scaleService = d3.nest().key(d=>d.idroot).rollup(d=>d3.scaleLinear().domain(d[0].range)).object(serviceFullList);
-
+    // scaleService = d3.nest().key(d=>d.idroot).rollup(d=>d3.scaleLinear().domain(d[0].range)).object(serviceFullList);
+scaleService = {};
+(serviceFullList || []).forEach(s => {
+  const r = (Array.isArray(s.range) && s.range.length === 2) ? s.range : [0, 1];
+  scaleService[s.idroot] = d3.scaleLinear().domain(r);
+});
     hosts.forEach(h => {
         sampleh[h.name] = {};
         tsnedata[h.name] = [];
@@ -105,60 +109,153 @@ function handleDataUrl(dataRaw) {
 
     return{sampleS:sampleh,tsnedata:tsnedata};
 }
-function handleSmalldata(dataRaw){
-    let hosts = d3.keys(dataRaw.nodes_info).map(ip=>{
-        return {
-            ip: ip,
-            name: ip,
-        }
-    });
-    scaleService = d3.nest().key(d=>d.idroot).rollup(d=>d3.scaleLinear().domain(d[0].range)).object(serviceFullList);
-    let time_stamp = dataRaw.time_stamp.map(d=>d>9999999999999?(d/1000000):d)
-    let sampleh = {};
+// function handleSmalldata(dataRaw){
+//     let hosts = d3.keys(dataRaw.nodes_info).map(ip=>{
+//         return {
+//             ip: ip,
+//             name: ip,
+//         }
+//     });
+//     scaleService = d3.nest().key(d=>d.idroot).rollup(d=>d3.scaleLinear().domain(d[0].range)).object(serviceFullList);
+//     let time_stamp = dataRaw.time_stamp.map(d=>d>9999999999999?(d/1000000):d)
+//     let sampleh = {};
 
-    var ser = serviceListattr.slice();
-    sampleh.timespan = time_stamp.map(d=>d);
-    let tsnedata = {};
-    let minMaxData = {};
-    let data = dataRaw.nodes_info;
-    hosts.forEach(h => {
-        // console.time(h.name)
-        sampleh[h.name] = {};
-        tsnedata[h.name] = [];
-        minMaxData[h.name] = [];
-        ser.forEach(s => sampleh[h.name][s] = []);
-        alternative_service.forEach((sa, si) => {
-            var scale = alternative_scale[si];
-            sampleh.timespan.forEach((dt, ti) => {
-                let value = [];
-                if (!_.isArray(data[h.ip][sa][ti])){
-                    data[h.ip][sa][ti] = [data[h.ip][sa][ti]]
-                }
-                for (let ii = 0;ii<serviceLists[si].sub.length;ii++){
-                    value.push((data[h.ip][sa][ti][ii]==='' || (data[h.ip][sa][ti][ii]===undefined||data[h.ip][sa][ti][ii]===null))?null:data[h.ip][sa][ti][ii]*scale)
-                }
-                let arrID = serviceListattr[si];
-                sampleh[h.name][arrID][ti] = value;
-                if (tsnedata[h.name][ti]===undefined){
-                    tsnedata[h.name][ti] = [];
-                    tsnedata[h.name][ti].name = h.name;
-                    tsnedata[h.name][ti].timestep =ti;
-                    minMaxData[h.name][ti] = [[],[]];
-                    minMaxData[h.name][ti].name = h.name;
-                    minMaxData[h.name][ti].timestep =ti;
-                }
-                value.forEach(v=>{
-                    const val = v === null ? undefined : scaleService[si](v);
-                    tsnedata[h.name][ti].push(val);
-                    minMaxData[h.name][ti][0].push(val);
-                    minMaxData[h.name][ti][1].push(val);
-                });
-            })
-        })
-        // console.timeEnd(h.name)
+//     var ser = serviceListattr.slice();
+//     sampleh.timespan = time_stamp.map(d=>d);
+//     let tsnedata = {};
+//     let minMaxData = {};
+//     let data = dataRaw.nodes_info;
+//     hosts.forEach(h => {
+//         // console.time(h.name)
+//         sampleh[h.name] = {};
+//         tsnedata[h.name] = [];
+//         minMaxData[h.name] = [];
+//         ser.forEach(s => sampleh[h.name][s] = []);
+//         alternative_service.forEach((sa, si) => {
+//             var scale = alternative_scale[si];
+//             sampleh.timespan.forEach((dt, ti) => {
+//                 let value = [];
+//                 if (!_.isArray(data[h.ip][sa][ti])){
+//                     data[h.ip][sa][ti] = [data[h.ip][sa][ti]]
+//                 }
+//                 for (let ii = 0;ii<serviceLists[si].sub.length;ii++){
+//                     value.push((data[h.ip][sa][ti][ii]==='' || (data[h.ip][sa][ti][ii]===undefined||data[h.ip][sa][ti][ii]===null))?null:data[h.ip][sa][ti][ii]*scale)
+//                 }
+//                 let arrID = serviceListattr[si];
+//                 sampleh[h.name][arrID][ti] = value;
+//                 if (tsnedata[h.name][ti]===undefined){
+//                     tsnedata[h.name][ti] = [];
+//                     tsnedata[h.name][ti].name = h.name;
+//                     tsnedata[h.name][ti].timestep =ti;
+//                     minMaxData[h.name][ti] = [[],[]];
+//                     minMaxData[h.name][ti].name = h.name;
+//                     minMaxData[h.name][ti].timestep =ti;
+//                 }
+//                 value.forEach(v=>{
+//                     const val = v === null ? undefined : scaleService[si](v);
+//                     tsnedata[h.name][ti].push(val);
+//                     minMaxData[h.name][ti][0].push(val);
+//                     minMaxData[h.name][ti][1].push(val);
+//                 });
+//             })
+//         })
+//         // console.timeEnd(h.name)
+//     });
+//     return {sampleh,tsnedata,minMaxData};
+// }
+function handleSmalldata(dataRaw) {
+  var nodes, tsRaw, time_stamp;
+  var sampleh, tsnedata, minMaxData;
+
+  nodes = (dataRaw && dataRaw.nodes_info) ? dataRaw.nodes_info : {};
+  tsRaw = Array.isArray(dataRaw && dataRaw.time_stamp) ? dataRaw.time_stamp : [];
+  // Normalize time units: if looks like ns, convert to ms; otherwise keep as number
+  time_stamp = tsRaw.map(function(d) { return (+d > 9999999999999) ? Math.floor(+d / 1e6) : +d; });
+
+  sampleh = { timespan: time_stamp.slice() };
+  tsnedata = {};
+  minMaxData = {};
+
+  // Ensure these globals are defined
+  const ser = Array.isArray(serviceListattr) ? serviceListattr.slice() : [];
+  const alt = Array.isArray(alternative_service) ? alternative_service : ser;
+  const altScale = Array.isArray(alternative_scale) ? alternative_scale : new Array(alt.length).fill(1);
+
+  // Build scales per idroot from serviceFullList ranges; fallback to identity
+  const scalesByIdroot = {};
+  (serviceFullList || []).forEach(s => {
+    const idroot = (s.idroot != null) ? s.idroot : 0;
+    const rng = (s.range && s.range.length === 2) ? s.range : [0, 1];
+    if (!scalesByIdroot[idroot]) {
+      scalesByIdroot[idroot] = d3.scaleLinear().domain(rng);
+    }
+  });
+
+  const hosts = Object.keys(nodes).map(ip => ({ ip, name: ip }));
+
+  hosts.forEach(h => {
+    sampleh[h.name] = {};
+    tsnedata[h.name] = [];
+    minMaxData[h.name] = [];
+
+    // pre-allocate arrays for each canonical metric key in `ser`
+    ser.forEach(sKey => { sampleh[h.name][sKey] = new Array(time_stamp.length); });
+
+    alt.forEach((sa, si) => {
+      // Try to map the alternative index -> idroot for scales; fallback to si
+      const idroot = serviceLists?.[si]?.sub?.[0]?.idroot ?? si;
+      const scaleMul = +altScale[si] || 1;
+      const scaleSvc = scalesByIdroot[idroot] || (x => x); // identity if missing
+
+      const series = Array.isArray(nodes[h.ip]?.[sa]) ? nodes[h.ip][sa] : [];
+
+      for (let ti = 0; ti < time_stamp.length; ti++) {
+        // Get the raw value at t; coerce to array safely
+        const rawAtT = series[ti];
+        const arrAtT = Array.isArray(rawAtT)
+          ? rawAtT.slice()
+          : (rawAtT != null ? [rawAtT] : []);
+
+        // How many sub-dimensions to output? Prefer serviceLists[si].sub length if present
+        const subLen = (serviceLists?.[si]?.sub?.length) || arrAtT.length || 1;
+
+        const mapped = new Array(subLen).fill(null).map((_, ii) => {
+          const v = arrAtT[ii];
+          return (v === '' || v == null) ? null : (v * scaleMul);
+        });
+
+        // Decide the destination key in sampleh: match by `ser[si]` if possible, else use `sa`
+        const destKey = (ser[si] != null ? ser[si] : sa);
+        if (!sampleh[h.name][destKey]) {
+          sampleh[h.name][destKey] = new Array(time_stamp.length);
+        }
+        sampleh[h.name][destKey][ti] = mapped;
+
+        // Init tsnedata/minMaxData rows on first touch
+        if (!tsnedata[h.name][ti]) {
+          tsnedata[h.name][ti] = [];
+          tsnedata[h.name][ti].name = h.name;
+          tsnedata[h.name][ti].timestep = ti;
+
+          minMaxData[h.name][ti] = [[], []];
+          minMaxData[h.name][ti].name = h.name;
+          minMaxData[h.name][ti].timestep = ti;
+        }
+
+        // Push scaled values (allow undefined for nulls)
+        mapped.forEach(v => {
+          const val = (v === null) ? undefined : scaleSvc(v);
+          tsnedata[h.name][ti].push(val);
+          minMaxData[h.name][ti][0].push(val);
+          minMaxData[h.name][ti][1].push(val);
+        });
+      }
     });
-    return {sampleh,tsnedata,minMaxData};
+  });
+
+  return { sampleh, tsnedata, minMaxData };
 }
+
 function handleAllData(dataRaw){
     let hosts = d3.keys(dataRaw.nodes_info).map(ip=>{
         return {

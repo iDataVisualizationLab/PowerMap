@@ -464,50 +464,95 @@ let renderTable = {
     job:_.partial(_renderTable,{numTotal:'#jobNumTotal',currentNum:'#currentJobNum',holder:'#JobList',mainKey:'jobid',subInfo:[{key:'compute',value:'total_nodes'},{key:'user',value:'user_name'}]}),
     user:_.partial(_renderTable,{numTotal:'#userNumTotal',currentNum:'#currentUserNum',holder:'#UserList',mainKey:'username',subInfo:[{key:'compute',value:'total_nodes'},{key:'name',func:(d)=>request.userReverseDict[d.key]}]}),
     compute:_.partial(_renderTable,{numTotal:'#computeNumTotal',currentNum:'#currentComputeNum',holder:'#ComputeList',mainKey:'compute',subInfo:[{key:'jobs',func:(d)=>d.value.job_id.length}]})}
-function _renderTable({numTotal,currentNum,holder,mainKey,subInfo},data, _data, _jobValueType, _jobValueName) {
+    
+    // function _renderTable({numTotal,currentNum,holder,mainKey,subInfo},data, _data, _jobValueType, _jobValueName) {
+    //     d3.select(currentNum).text(data.length);
+    //     d3.select(numTotal).text(_data.length);
+
+    //     let job_info = d3.select(holder+' table tbody')
+    //         .selectAll('tr').data(data)
+    //         .join('tr');
+    //     const column = serviceFullList.map(s => s.text);
+
+    //     d3.select(holder+' table .jobValType').attr('colspan', serviceFullList.length).text(_jobValueType);
+    //     d3.select(holder+' table .header').selectAll('th').data(column)
+    //         .join('th')
+    //         .style('background-color', d => d === serviceFullList[_jobValueName].text ? '#b0ff6b' : null)
+    //         .text(d => d);
+    //     function rendercell(d){
+    //         const _cell = [{key: mainKey, value: d.key}];
+    //         serviceFullList.forEach(s => {
+    //             if (d.value===undefined)
+    //                 debugger
+    //             _cell.push({
+    //                 key: s.text,
+    //                 value: Math.round(scaleService[s.idroot].invert(d.value.summary[s.idroot][_jobValueType]))
+    //             })
+    //         });
+    //         subInfo.forEach(s=>{
+    //             let value = s.value?d.value[s.value]:s.func(d);
+    //             _cell.push({key:s.key,value})
+    //         });
+    //         return _cell;
+    //     }
+    //     job_info
+    //         .selectAll('td').data(rendercell)
+    //         .join('td')
+    //         .style('text-align', d => (d.key === 'averagePower' || d.key === 'compute' || d.key === 'core') ? 'end' : null)
+    //         .style('min-width', '50px')
+    //         // .style('background-color',d=>d.key==='job'?'rgba(166,86,40,0.5)': (d.key ==='compute'?'rgba(55,126,184,0.5)':null))
+    //         .text(d => d.value);
+    //     // subObject.mouseoverAdd('joblist',function(d){
+    //     //     job_info.filter(u=>d.source.element.find(e=>e.key===u.key)||d.target.element.find(e=>e.key===u.key)).classed('highlight',true);
+    //     // });
+    //     // subObject.mouseoutAdd('joblist',function(d){
+    //     //     job_info.classed('highlight',false);
+    //     // });
+    // }
+    function _renderTable({numTotal,currentNum,holder,mainKey,subInfo}, data, _all, _jobValueType, _jobValueNameRaw) {
+    // ensure numeric index for service selection
+    const _jobValueName = +_jobValueNameRaw;
+
     d3.select(currentNum).text(data.length);
-    d3.select(numTotal).text(_data.length);
+    d3.select(numTotal).text(_all.length);
 
-    let job_info = d3.select(holder+' table tbody')
-        .selectAll('tr').data(data)
-        .join('tr');
-    const column = serviceFullList.map(s => s.text);
-
+    const columns = serviceFullList.map(s => ({ id: s.idroot, text: s.text }));
     d3.select(holder+' table .jobValType').attr('colspan', serviceFullList.length).text(_jobValueType);
-    d3.select(holder+' table .header').selectAll('th').data(column)
+    d3.select(holder+' table .header').selectAll('th')
+        .data(columns, d => d.id)
         .join('th')
-        .style('background-color', d => d === serviceFullList[_jobValueName].text ? '#b0ff6b' : null)
-        .text(d => d);
-    function rendercell(d){
-        const _cell = [{key: mainKey, value: d.key}];
+        .style('background-color', d => (+_jobValueName === +d.id ? '#b0ff6b' : null))
+        .text(d => d.text);
+
+    function rendercell(row){
+        const out = [{ key: mainKey, value: row.key }];
+
         serviceFullList.forEach(s => {
-            if (d.value===undefined)
-                debugger
-            _cell.push({
-                key: s.text,
-                value: Math.round(scaleService[s.idroot].invert(d.value.summary[s.idroot][_jobValueType]))
-            })
+        const scale = scaleService && scaleService[s.idroot];
+        const statObj = row.value && row.value.summary && row.value.summary[s.idroot];
+        const raw = statObj ? statObj[_jobValueType] : undefined;
+        const display = Number.isFinite(raw)
+            ? Math.round((scale && scale.invert ? scale.invert(raw) : raw))
+            : '–';
+        out.push({ key: s.text, value: display });
         });
-        subInfo.forEach(s=>{
-            let value = s.value?d.value[s.value]:s.func(d);
-            _cell.push({key:s.key,value})
+
+        subInfo.forEach(s => {
+        const v = s.value ? row.value?.[s.value] : s.func(row);
+        out.push({ key: s.key, value: v });
         });
-        return _cell;
+        return out;
     }
-    job_info
+
+    d3.select(holder+' table tbody')
+        .selectAll('tr').data(data, d => d.key)
+        .join('tr')
         .selectAll('td').data(rendercell)
         .join('td')
         .style('text-align', d => (d.key === 'averagePower' || d.key === 'compute' || d.key === 'core') ? 'end' : null)
         .style('min-width', '50px')
-        // .style('background-color',d=>d.key==='job'?'rgba(166,86,40,0.5)': (d.key ==='compute'?'rgba(55,126,184,0.5)':null))
         .text(d => d.value);
-    // subObject.mouseoverAdd('joblist',function(d){
-    //     job_info.filter(u=>d.source.element.find(e=>e.key===u.key)||d.target.element.find(e=>e.key===u.key)).classed('highlight',true);
-    // });
-    // subObject.mouseoutAdd('joblist',function(d){
-    //     job_info.classed('highlight',false);
-    // });
-}
+    }
 
 
 function initFilterMode(){
@@ -598,30 +643,55 @@ function drawJobList(){
     }
 }
 function drawComputeList(){
-    const _jobValueType = $(d3.select('#jobValueType').node()).val();
-    const _jobFilterType = 'top'//$(d3.select('#jobFilterType').node()).val();
-    const _jobValueName = $(d3.select('#jobValueName').node()).val();
-    const _JobFilterThreshold = +d3.select('#JobFilterThreshold').node().value;
-    const _data = d3.entries(Layout.computesStatic);
-    if (filterMode!=='computeList')
-    {
-        const data = [];
-        subObject.currentSelected().computers
-            .forEach(d=>{
-                data.push({key:d,value:Layout.computesStatic[d]})
-            });
-        renderTable['compute'](data, _data, _jobValueType, _jobValueName);
-    }else {
-        let data = _data.sort((a, b) => b.value.summary[_jobValueName][_jobValueType] - a.value.summary[_jobValueName][_jobValueType]).slice(0, _JobFilterThreshold);
-        renderTable['compute'](data, _data, _jobValueType, _jobValueName);
-        const jobList = [];
-        data.forEach(d => {
-            d.value.job_id.forEach(j=>jobList.push(j));
-        });
-        subObject.filterTerms(jobList)
-    }
+  const _jobValueType = $(d3.select('#jobValueType').node()).val();
+  const _jobValueName = +$(d3.select('#jobValueName').node()).val();
+  const _JobFilterThreshold = +d3.select('#JobFilterThreshold').node().value;
+
+  const all = d3.entries(Layout.computesStatic);
+
+  if (filterMode!=='computeList') {
+    const rows = subObject.currentSelected().computers
+      .map(k => ({ key: k, value: Layout.computesStatic[k] }))
+      .filter(d => d.value && d.value.summary); // 👈 guard
+    renderTable.compute(rows, all, _jobValueType, _jobValueName);
+  } else {
+    const rows = all
+      .filter(d => d.value && d.value.summary && d.value.summary[_jobValueName])
+      .sort((a,b) => b.value.summary[_jobValueName][_jobValueType] - a.value.summary[_jobValueName][_jobValueType])
+      .slice(0, _JobFilterThreshold);
+    renderTable.compute(rows, all, _jobValueType, _jobValueName);
+    const jobList = [];
+    rows.forEach(d => d.value.job_id.forEach(j => jobList.push(j)));
+    subObject.filterTerms(jobList);
+  }
 }
+
+// function drawComputeList(){
+//     const _jobValueType = $(d3.select('#jobValueType').node()).val();
+//     const _jobFilterType = 'top'//$(d3.select('#jobFilterType').node()).val();
+//     const _jobValueName = $(d3.select('#jobValueName').node()).val();
+//     const _JobFilterThreshold = +d3.select('#JobFilterThreshold').node().value;
+//     const _data = d3.entries(Layout.computesStatic);
+//     if (filterMode!=='computeList')
+//     {
+//         const data = [];
+//         subObject.currentSelected().computers
+//             .forEach(d=>{
+//                 data.push({key:d,value:Layout.computesStatic[d]})
+//             });
+//         renderTable['compute'](data, _data, _jobValueType, _jobValueName);
+//     }else {
+//         let data = _data.sort((a, b) => b.value.summary[_jobValueName][_jobValueType] - a.value.summary[_jobValueName][_jobValueType]).slice(0, _JobFilterThreshold);
+//         renderTable['compute'](data, _data, _jobValueType, _jobValueName);
+//         const jobList = [];
+//         data.forEach(d => {
+//             d.value.job_id.forEach(j=>jobList.push(j));
+//         });
+//         subObject.filterTerms(jobList)
+//     }
+// }
 function drawColorLegend() {
+    if (!scaleService || !scaleService[serviceSelected]) return;
     let width=300;
     const contain =  d3.select('#legendTimeArc');
     const svg = contain.select('svg').attr('width',width).attr('height',100);
