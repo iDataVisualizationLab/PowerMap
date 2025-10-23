@@ -28,7 +28,8 @@ let request, timelineControl;
 // /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 const TIME_RANGES = [
-  { label: 'Sample data', value: -3 , default: true },
+  { label: 'Power off', value: -4 , default: false },
+  { label: 'High Room Temperature', value: -3 , default: true },
   { label: 'Specific time', value: -1 , default: false },
   { label: 'This week', value: 7 , default: false },
   { label: '3 days', value: 3 , default: false },
@@ -68,11 +69,9 @@ let baseData = null;
 // Cache for per-metric JSONs (avoid refetching)
 const metricCache = new Map();
 
-// Where your Python script outputs JSONs:
-const METRIC_DIRS = [
-  'src/data/metrics_output/with_data',
-  'src/data/metrics_output/no_data',
-];
+let METRIC_DIRS = [];
+
+
 
 // use the same filename sanitizing as in the Python exporter
 function metricFileName(name) {
@@ -94,6 +93,82 @@ function convertBetween(from, to, t) {
   if (from === 'ns' && to === 'ms') return Math.floor(t / 1e6);
   if (from === 'ns' && to === 's') return Math.floor(t / 1e9);
   return t;
+}
+function applyServiceListForRange(rangeVal) {
+  const v = Number(rangeVal); // normalize to number
+
+  if (v === -3) {
+    serviceListattr = [
+      "system_power", "cpu_power", "temperature", "cpu_usage", "memory_usage",
+      "ampsreading", "availablespare", "availablesparethreshold", "compositetemperature",
+      "computepower", "controllerbusytimelower", "cpupower", "cpuusage", "cpuusagepctreading",
+      "dataunitsreadlower", "dataunitswrittenlower", "hostreadcommandslower", "hostwritecommandslower",
+      "itue", "powercycleslower", "poweronhourslower", "powertocoolratio", "psuefficiency",
+      "psurpmreading", "psutemperaturereading", "rpmreading", "sysairflowefficiency",
+      "sysairflowperfanpower", "sysairflowpersysinputpower", "sysairflowutilization",
+      "sysnetairflow", "sysracktempdelta", "systemheadroominstantaneous", "systeminputpower",
+      "systemoutputpower", "systempowerconsumption", "temperaturereading", "totalcpupower",
+      "totalfanpower", "totalmemorypower", "totalpsuheatdissipation", "totalstoragepower",
+      "unsafeshutdownslower", "voltagereading", "wattsreading"
+    ];
+  } else if (v === -4) {
+    serviceListattr = [
+      "system_power", "cpu_power", "temperature", "cpu_usage", "memory_usage",
+    ];
+    // serviceListattr = [
+    //   "system_power", "cpu_power", "temperature", "cpu_usage", "memory_usage",
+    //   "aggregateusage", "ampsreading", "availablespare", "availablesparethreshold",
+    //   "avgfrequencyacrosscores", "compositetemperature", "computepower",
+    //   "controllerbusytimelower", "cpuavgpbmratiocounterlow", "cpuc0residencyhigh",
+    //   "cpuc0residencylow", "cpuepi", "cpulimitingcounter", "cpupkgenergy",
+    //   "cpupower", "cpuusage", "cpuusagepctreading", "cpuviolationcounter",
+    //   "dataunitsreadlower", "dataunitswrittenlower", "ddrlimitingcounter",
+    //   "drampkgenergy", "drampwr", "dramthrottling", "drivetemperature",
+    //   "eccerate", "energytimestamp", "gpuarbitratedpowerlimit", "gpuclockfrequency",
+    //   "gpumemoryclockfrequency", "gpumemoryusage", "gpuusage", "hostreadcommandslower",
+    //   "hostwritecommandslower", "iousage", "iousagepctreading", "itue", "limitingevents",
+    //   "mediawritecount", "memorytemperature", "memoryusage", "memoryusagepctreading",
+    //   "percentdriveliferemaining", "pkgpwr", "pkgthermalstatus", "powerconsumption",
+    //   "powercyclecount", "powercycleslower", "poweronhours", "poweronhourslower",
+    //   "powertocoolratio", "primarytemperature", "psuefficiency", "psurpmreading",
+    //   "psutemperaturereading", "readerrorrate", "rpmreading", "sysairflowefficiency",
+    //   "sysairflowperfanpower", "sysairflowpersysinputpower", "sysairflowutilization",
+    //   "sysnetairflow", "sysracktempdelta", "systemheadroominstantaneous",
+    //   "systeminputpower", "systemoutputpower", "systempowerconsumption",
+    //   "systemusagepctreading", "tctrl", "temperaturereading", "tjmax", "totalcpupower",
+    //   "totalfanpower", "totalmemorypower", "totalpsuheatdissipation", "totalstoragepower",
+    //   "unsafeshutdownslower", "unusedreservedblockcount", "usedreservedblockcount",
+    //   "voltagereading", "wattsreading"
+    // ];
+  } else {
+    // default (small) list
+    serviceListattr = ["system_power", "cpu_power", "temperature", "cpu_usage"];
+  }
+
+  // Rebuild dependent structures and refresh the UI
+  serviceLists = serviceListattr.map((key, index) => ({
+    text: key,
+    id: index,
+    enable: true,
+    sub: [{
+      text: key,
+      id: 0,
+      enable: true,
+      idroot: index,
+      angle: (2 * Math.PI * index) / serviceListattr.length,
+      range: [0, 3000],
+    }]
+  }));
+
+  serviceFullList = [];
+  serviceLists.forEach(s => s.sub.forEach(ss => serviceFullList.push(ss)));
+
+  serviceList_selected = serviceListattr.map((key, i) => ({ text: key, index: i }));
+  alternative_service = [...serviceListattr];
+  alternative_scale = Array(serviceListattr.length).fill(1);
+
+  serviceControl();        // re-render dropdowns/controls
+  // if (baseData) updateServiceRanges(baseData); // optional: recompute ranges if data loaded
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////
@@ -159,11 +234,12 @@ function renderModeMenu() {
         const intervalBox = d3.select('#intervalContainer');
         const startEndBox = d3.select('#startEndContainer');
         const processBtn = d3.select('#processBtn');
+        applyServiceListForRange(selected);
         if (selected === -1) {
           intervalBox.style('display', 'none');
           startEndBox.style('display', null);
           processBtn.style('display', null);
-        } else if (selected === -3) {
+        } else if (selected <= -3) {
           intervalBox.style('display', 'none');
           startEndBox.style('display', null);
           processBtn.style('display', null);
@@ -557,9 +633,14 @@ async function fetchDataAndProcess(Params, isRealTime = true) {
       body: JSON.stringify(Params)
     }).then(res => res.json());
   } else {
-    // Historical mode: Load from local file
-    apiData = await fetch('src/data/combined_data2_reduced.json') // replace with your actual local path
-      .then(res => res.json());
+    if (document.getElementById('realTimeRange').value == -3) {
+      apiData = await fetch('src/data/combined.json')
+        .then(res => res.json());
+    }
+    if (document.getElementById('realTimeRange').value == -4) {
+      apiData = await fetch('src/data/combined_october_cleaned.json')
+        .then(res => res.json());
+    }
   }
 
   const timeMap = new Map();
@@ -737,6 +818,7 @@ function startRealTimePolling(isRealTime = true) {
     const realTimeParams = buildRealTimeParams(range, intervalMs);
     request = new Simulation(fetchDataAndProcess(realTimeParams, isRealTime));
   }
+
   fetchAndUpdate();
   initdraw();
     initTimeElement();
@@ -744,93 +826,244 @@ function startRealTimePolling(isRealTime = true) {
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////
+// async function fetchMetricJSON(metricName) {
+//   if (metricCache.has(metricName)) return metricCache.get(metricName);
+//   const file = metricFileName(metricName);
+//   for (const dir of METRIC_DIRS) {
+//     try {
+//       const res = await fetch(`${dir}/${file}`, { cache: 'no-store' });
+//       if (res.ok) {
+//         const json = await res.json();
+//         metricCache.set(metricName, json);
+//         return json;
+//       }
+//     } catch (e) { /* try next folder */ }
+//   }
+//   throw new Error(`Metric JSON not found: ${file}`);
+// }
 async function fetchMetricJSON(metricName) {
   if (metricCache.has(metricName)) return metricCache.get(metricName);
+
   const file = metricFileName(metricName);
+  const rangeVal = Number(document.getElementById('realTimeRange')?.value ?? -3);
+  METRIC_DIRS = (rangeVal === -4)
+    ? [
+        'src/data/metrics_output_october/h100/with_data',
+        'src/data/metrics_output_october/zen4/with_data',
+      ]
+    : [
+        'src/data/metrics_output/with_data',
+        'src/data/metrics_output/no_data',
+      ];
+
+  const found = [];
   for (const dir of METRIC_DIRS) {
     try {
       const res = await fetch(`${dir}/${file}`, { cache: 'no-store' });
-      if (res.ok) {
-        const json = await res.json();
-        metricCache.set(metricName, json);
-        return json;
-      }
-    } catch (e) { /* try next folder */ }
+      if (res.ok) found.push(await res.json());
+    } catch (_) {}
   }
-  throw new Error(`Metric JSON not found: ${file}`);
+  if (!found.length) throw new Error(`Metric JSON not found: ${file}`);
+
+  // Choose the part with the longest time_stamp as the primary
+  const byLen = (j) => Array.isArray(j?.time_stamp) ? j.time_stamp.length : 0;
+  found.sort((a, b) => byLen(b) - byLen(a));
+  const primary = found[0];
+
+  // Start with primary "raw" shape
+  const out = {
+    time_stamp: Array.isArray(primary.time_stamp) ? primary.time_stamp.slice() : [],
+    nodes_info: {},
+    jobs_info: primary.jobs_info ? { ...primary.jobs_info } : {}, // keep if present
+  };
+
+  // Merge other parts by preferring non-empty values per index
+  function mergeNodesInfo(target, src) {
+    const ni = src?.nodes_info || {};
+    for (const node of Object.keys(ni)) {
+      const metricsObj = ni[node] || {};
+      target[node] = target[node] || {};
+      for (const mName of Object.keys(metricsObj)) {
+        const arr = metricsObj[mName];
+        if (!Array.isArray(arr)) continue;            // skip weird shapes
+        const dest = target[node][mName];
+        if (!Array.isArray(dest)) {
+          // first time we see this metric for this node: clone as-is
+          target[node][mName] = arr.slice();
+        } else {
+          // prefer non-empty values from either source at each index
+          const L = Math.max(dest.length, arr.length);
+          const merged = new Array(L);
+          for (let i = 0; i < L; i++) {
+            const a = dest[i];
+            const b = arr[i];
+            const aEmpty = (Array.isArray(a) ? a.length === 0 : a == null);
+            const bEmpty = (Array.isArray(b) ? b.length === 0 : b == null);
+            merged[i] = aEmpty && !bEmpty ? b
+                      : !aEmpty && bEmpty ? a
+                      : !aEmpty && !bEmpty ? (Array.isArray(a) ? a : [a]).concat(Array.isArray(b) ? b : [b])
+                      : []; // both empty
+          }
+          target[node][mName] = merged;
+        }
+      }
+    }
+  }
+
+  // primary first
+  mergeNodesInfo(out.nodes_info, primary);
+  // then any others
+  for (let i = 1; i < found.length; i++) {
+    mergeNodesInfo(out.nodes_info, found[i]);
+    // If a later part has longer time_stamp, keep the longer one (still raw)
+    if (byLen(found[i]) > out.time_stamp.length) {
+      out.time_stamp = found[i].time_stamp.slice();
+    }
+    // Merge jobs_info if present
+    if (found[i].jobs_info) {
+      out.jobs_info ||= {};
+      for (const [jid, job] of Object.entries(found[i].jobs_info)) {
+        if (!out.jobs_info[jid]) out.jobs_info[jid] = job;
+      }
+    }
+  }
+
+  metricCache.set(metricName, out);
+  return out;
 }
 
+
 /** Merge only one metric into a *copy* of baseData, aligned to base time_axis */
+// function mergeMetricIntoBase(base, metricJson, metricName) {
+//   const result = {
+//     ...base,
+//     nodes_info: { ...base.nodes_info }
+//   };
+
+//   // ---- Make sure both are numbers (not Date objects)
+//   const baseTimesRaw = (base.time_stamp || []).map(t => (t instanceof Date ? +t : +t));
+//   const metricTimesRaw = (metricJson.time_stamp || []).map(t => +t);
+
+//   // ---- Detect units and convert metric → base unit
+//   const baseUnit   = guessUnit(baseTimesRaw[0]);    // 'ns' | 'ms' | 's'
+//   const metricUnit = guessUnit(metricTimesRaw[0]);
+
+//   const toUnit = (v, from, to) => {
+//     if (from === to) return v;
+//     const mul = u => (u === 's' ? 1 : u === 'ms' ? 1e6 : 1e9);
+//     return Math.floor(v * (mul(to)/ mul(from)));
+//   };
+
+//   const baseTimes   = baseTimesRaw.slice(); // keep in base unit
+//   const metricTimes = metricTimesRaw.map(t => toUnit(t, metricUnit, baseUnit));
+
+//   // ---- Build nearest-neighbor index with tolerance (½ base step)
+//   const steps = [];
+//   for (let i = 1; i < baseTimes.length; i++) {
+//     const d = baseTimes[i] - baseTimes[i - 1];
+//     if (isFinite(d) && d > 0) steps.push(d);
+//   }
+//   steps.sort((a, b) => a - b);
+//   const baseStep = steps.length ? steps[Math.floor(steps.length / 2)] : Math.max(1, baseTimes[1] - baseTimes[0] || 1);
+//   const tol = Math.max(1, baseStep / 2);
+
+//   const idxMap = new Array(baseTimes.length).fill(-1);
+//   let i = 0, j = 0;
+//   while (i < baseTimes.length && j < metricTimes.length) {
+//     const dt = metricTimes[j] - baseTimes[i];
+//     if (Math.abs(dt) <= tol) { idxMap[i] = j; i++; j++; }
+//     else if (dt < -tol)      { j++; }
+//     else                     { i++; }
+//   }
+
+//   // ---- Ensure metric nodes exist in result
+//   const metricNodes = Object.keys(metricJson.nodes_info || {});
+//   for (const node of metricNodes) {
+//     if (!result.nodes_info[node]) {
+//       const blank = Array(baseTimes.length).fill(0).map(() => []);
+//       result.nodes_info[node] = { cpus: blank.slice(), job_id: blank.slice() };
+//       (serviceListattr || []).forEach(k => (result.nodes_info[node][k] = blank.slice()));
+//     }
+//   }
+
+//   // ---- Write only the selected metric for nodes present in metricJson
+//   for (const node of metricNodes) {
+//     const srcNode = metricJson.nodes_info[node];
+//     const srcArr  = srcNode && srcNode[metricName];
+//     if (!Array.isArray(srcArr)) continue;
+
+//     const aligned = Array(baseTimes.length).fill(0).map(() => []);
+//     for (let bi = 0; bi < idxMap.length; bi++) {
+//       const mj = idxMap[bi];
+//       if (mj >= 0 && mj < srcArr.length) {
+//         const v = srcArr[mj];
+//         aligned[bi] = Array.isArray(v) ? v : [v];  // keep array-per-time shape
+//       }
+//     }
+//     result.nodes_info[node] = { ...result.nodes_info[node], [metricName]: aligned };
+//   }
+
+//   // NOTE: result.time_stamp is left exactly as in base (numbers or Dates).
+//   return result;
+// }
 function mergeMetricIntoBase(base, metricJson, metricName) {
+  // clone shallowly so we don’t mutate the original base object
   const result = {
     ...base,
-    nodes_info: { ...base.nodes_info }
+    nodes_info: { ...base.nodes_info },
+    jobs_info: base.jobs_info ? { ...base.jobs_info } : {},
   };
 
-  // ---- Make sure both are numbers (not Date objects)
-  const baseTimesRaw = (base.time_stamp || []).map(t => (t instanceof Date ? +t : +t));
-  const metricTimesRaw = (metricJson.time_stamp || []).map(t => +t);
-
-  // ---- Detect units and convert metric → base unit
-  const baseUnit   = guessUnit(baseTimesRaw[0]);    // 'ns' | 'ms' | 's'
-  const metricUnit = guessUnit(metricTimesRaw[0]);
-
-  const toUnit = (v, from, to) => {
-    if (from === to) return v;
-    const mul = u => (u === 's' ? 1 : u === 'ms' ? 1e6 : 1e9);
-    return Math.floor(v * (mul(to)/ mul(from)));
-  };
-
-  const baseTimes   = baseTimesRaw.slice(); // keep in base unit
-  const metricTimes = metricTimesRaw.map(t => toUnit(t, metricUnit, baseUnit));
-
-  // ---- Build nearest-neighbor index with tolerance (½ base step)
-  const steps = [];
-  for (let i = 1; i < baseTimes.length; i++) {
-    const d = baseTimes[i] - baseTimes[i - 1];
-    if (isFinite(d) && d > 0) steps.push(d);
-  }
-  steps.sort((a, b) => a - b);
-  const baseStep = steps.length ? steps[Math.floor(steps.length / 2)] : Math.max(1, baseTimes[1] - baseTimes[0] || 1);
-  const tol = Math.max(1, baseStep / 2);
-
-  const idxMap = new Array(baseTimes.length).fill(-1);
-  let i = 0, j = 0;
-  while (i < baseTimes.length && j < metricTimes.length) {
-    const dt = metricTimes[j] - baseTimes[i];
-    if (Math.abs(dt) <= tol) { idxMap[i] = j; i++; j++; }
-    else if (dt < -tol)      { j++; }
-    else                     { i++; }
+  // keep metric jobs_info if a metric file includes it
+  if (metricJson.jobs_info) {
+    for (const [jid, job] of Object.entries(metricJson.jobs_info)) {
+      if (!result.jobs_info[jid]) result.jobs_info[jid] = job;
+    }
   }
 
-  // ---- Ensure metric nodes exist in result
+  // normalize times to numbers
+  const baseTimes = (base.time_stamp || []).map(t => +t);
+  const metricTimes = (metricJson.time_stamp || []).map(t => +t);
+  if (!baseTimes.length || !metricTimes.length) return result;
+
+  // unit detection
+  const uBase = guessUnit(baseTimes[0]);   // s | ms | ns
+  const uMet  = guessUnit(metricTimes[0]);
+
+  const to = (v, from, to) => convertBetween(from, to, v);
+  const baseNs   = uBase === 'ns' ? baseTimes : baseTimes.map(t => to(t, uBase, 'ns'));
+  const metricNs = uMet  === 'ns' ? metricTimes : metricTimes.map(t => to(t, uMet, 'ns'));
+
+  // build nearest index with half-step tolerance
+  const step = medianStep(baseNs);
+  const tol = Math.max(1, step / 2);
+  const mapIdx = buildNearestIndex(baseNs, metricNs, tol);
+
+  // align per node -> metricName
   const metricNodes = Object.keys(metricJson.nodes_info || {});
   for (const node of metricNodes) {
-    if (!result.nodes_info[node]) {
-      const blank = Array(baseTimes.length).fill(0).map(() => []);
-      result.nodes_info[node] = { cpus: blank.slice(), job_id: blank.slice() };
-      (serviceListattr || []).forEach(k => (result.nodes_info[node][k] = blank.slice()));
-    }
-  }
-
-  // ---- Write only the selected metric for nodes present in metricJson
-  for (const node of metricNodes) {
-    const srcNode = metricJson.nodes_info[node];
-    const srcArr  = srcNode && srcNode[metricName];
+    const srcNode = metricJson.nodes_info[node] || {};
+    const srcArr  = srcNode[metricName];
     if (!Array.isArray(srcArr)) continue;
 
-    const aligned = Array(baseTimes.length).fill(0).map(() => []);
-    for (let bi = 0; bi < idxMap.length; bi++) {
-      const mj = idxMap[bi];
-      if (mj >= 0 && mj < srcArr.length) {
-        const v = srcArr[mj];
-        aligned[bi] = Array.isArray(v) ? v : [v];  // keep array-per-time shape
+    // Ensure node exists on result with time-sized arrays for metricName
+    if (!result.nodes_info[node]) result.nodes_info[node] = {};
+    const aligned = Array(baseNs.length).fill(0).map(() => []);
+
+    for (let bi = 0; bi < mapIdx.length; bi++) {
+      const j = mapIdx[bi];
+      if (j >= 0 && j < srcArr.length) {
+        const v = srcArr[j];
+        aligned[bi] = Array.isArray(v) ? v : (v == null ? [] : [v]);
       }
     }
-    result.nodes_info[node] = { ...result.nodes_info[node], [metricName]: aligned };
+
+    result.nodes_info[node] = {
+      ...result.nodes_info[node],
+      [metricName]: aligned
+    };
   }
 
-  // NOTE: result.time_stamp is left exactly as in base (numbers or Dates).
   return result;
 }
 
@@ -1022,7 +1255,6 @@ function loadHistoricalData() {
     console.warn('Start or End time is missing.');
     return;
   }
-
   const historicalParams = buildHistoricalParams(start, end);
   request = new Simulation(fetchDataAndProcess(historicalParams));
   initdraw();
@@ -1095,41 +1327,74 @@ $(document).ready(function () {
             serviceSelected = +command.service;
         if (command.metric !== undefined && _.isNumber(+command.metric))
             serviceSelected = +command.metric;
-        // serviceListattr = [
-        //     "system_power", "gpu_power", "cpu_power", "dram_power",
-        //     "gpu_mem", "gpu_usage", "cpu_usage", "dram_usage",
-        // ];
-        // serviceListattr = [
-        //     "system_power","cpu_power", "temperature", "cpu_usage",
-        // ];
-        serviceListattr = ["system_power","cpu_power", "temperature", "cpu_usage", "memory_usage", 'ampsreading', 'availablespare', 'availablesparethreshold', 'compositetemperature', 'computepower', 'controllerbusytimelower', 'cpupower', 'cpuusage', 'cpuusagepctreading', 'dataunitsreadlower', 'dataunitswrittenlower', 'hostreadcommandslower', 'hostwritecommandslower', 'itue', 'powercycleslower', 'poweronhourslower', 'powertocoolratio', 'psuefficiency', 'psurpmreading', 'psutemperaturereading', 'rpmreading', 'sysairflowefficiency', 'sysairflowperfanpower', 'sysairflowpersysinputpower', 'sysairflowutilization', 'sysnetairflow', 'sysracktempdelta', 'systemheadroominstantaneous', 'systeminputpower', 'systemoutputpower', 'systempowerconsumption', 'temperaturereading', 'totalcpupower', 'totalfanpower', 'totalmemorypower', 'totalpsuheatdissipation', 'totalstoragepower', 'unsafeshutdownslower', 'voltagereading', 'wattsreading'];
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// debugger
-// initFlowTypeFromFiles();
-// debugger
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-        serviceLists = serviceListattr.map((key, index) => ({
-            text: key,
-            id: index,
-            enable: true,
-            sub: [{
-                text: key,
-                id: 0,
-                enable: true,
-                idroot: index,
-                angle: (2 * Math.PI * index) / serviceListattr.length,
-                range: [0, 3000],
-            }]
-        }));
-        serviceFullList = [];
-        serviceLists.forEach(s => s.sub.forEach(ss => serviceFullList.push(ss)));
-        serviceList_selected = serviceListattr.map((key, i) => ({
-            text: key,
-            index: i
-        }));
-        alternative_service = [...serviceListattr];
-        alternative_scale = Array(serviceListattr.length).fill(1);
+//         // serviceListattr = [
+//         //     "system_power", "gpu_power", "cpu_power", "dram_power",
+//         //     "gpu_mem", "gpu_usage", "cpu_usage", "dram_usage",
+//         // ];
+//         // serviceListattr = [
+//         //   "system_power", "cpu_power", "temperature", "cpu_usage",
+//         // ];
+//         // if (document.getElementById('realTimeRange').value == -3) {
+//           // serviceListattr = ["system_power","cpu_power", "temperature", "cpu_usage", "memory_usage", 'ampsreading', 'availablespare', 'availablesparethreshold', 'compositetemperature', 'computepower', 'controllerbusytimelower', 'cpupower', 'cpuusage', 'cpuusagepctreading', 'dataunitsreadlower', 'dataunitswrittenlower', 'hostreadcommandslower', 'hostwritecommandslower', 'itue', 'powercycleslower', 'poweronhourslower', 'powertocoolratio', 'psuefficiency', 'psurpmreading', 'psutemperaturereading', 'rpmreading', 'sysairflowefficiency', 'sysairflowperfanpower', 'sysairflowpersysinputpower', 'sysairflowutilization', 'sysnetairflow', 'sysracktempdelta', 'systemheadroominstantaneous', 'systeminputpower', 'systemoutputpower', 'systempowerconsumption', 'temperaturereading', 'totalcpupower', 'totalfanpower', 'totalmemorypower', 'totalpsuheatdissipation', 'totalstoragepower', 'unsafeshutdownslower', 'voltagereading', 'wattsreading'];
+//         // }
+//         // else if (document.getElementById('realTimeRange').value == -4) {
+//         // serviceListattr = [
+//         //   "system_power", "cpu_power", "temperature", "cpu_usage", "memory_usage",
+//         //   "aggregateusage", "ampsreading", "availablespare", "availablesparethreshold",
+//         //   "avgfrequencyacrosscores", "compositetemperature", "computepower",
+//         //   "controllerbusytimelower", "cpuavgpbmratiocounterlow", "cpuc0residencyhigh",
+//         //   "cpuc0residencylow", "cpuepi", "cpulimitingcounter", "cpupkgenergy",
+//         //   "cpupower", "cpuusage", "cpuusagepctreading", "cpuviolationcounter",
+//         //   "dataunitsreadlower", "dataunitswrittenlower", "ddrlimitingcounter",
+//         //   "drampkgenergy", "drampwr", "dramthrottling", "drivetemperature",
+//         //   "eccerate", "energytimestamp", "gpuarbitratedpowerlimit", "gpuclockfrequency",
+//         //   "gpumemoryclockfrequency", "gpumemoryusage", "gpuusage", "hostreadcommandslower",
+//         //   "hostwritecommandslower", "iousage", "iousagepctreading", "itue", "limitingevents",
+//         //   "mediawritecount", "memorytemperature", "memoryusage", "memoryusagepctreading",
+//         //   "percentdriveliferemaining", "pkgpwr", "pkgthermalstatus", "powerconsumption",
+//         //   "powercyclecount", "powercycleslower", "poweronhours", "poweronhourslower",
+//         //   "powertocoolratio", "primarytemperature", "psuefficiency", "psurpmreading",
+//         //   "psutemperaturereading", "readerrorrate", "rpmreading", "sysairflowefficiency",
+//         //   "sysairflowperfanpower", "sysairflowpersysinputpower", "sysairflowutilization",
+//         //   "sysnetairflow", "sysracktempdelta", "systemheadroominstantaneous",
+//         //   "systeminputpower", "systemoutputpower", "systempowerconsumption",
+//         //   "systemusagepctreading", "tctrl", "temperaturereading", "tjmax", "totalcpupower",
+//         //   "totalfanpower", "totalmemorypower", "totalpsuheatdissipation", "totalstoragepower",
+//         //   "unsafeshutdownslower", "unusedreservedblockcount", "usedreservedblockcount",
+//         //   "voltagereading", "wattsreading"
+//         // ];
+//         // }
+        
+
+//         // serviceListattr = ["system_power","cpu_power", "temperature", "cpu_usage", "memory_usage", 'ampsreading', 'availablespare', 'availablesparethreshold', 'compositetemperature', 'computepower', 'controllerbusytimelower', 'cpupower', 'cpuusage', 'cpuusagepctreading', 'dataunitsreadlower', 'dataunitswrittenlower', 'hostreadcommandslower', 'hostwritecommandslower', 'itue', 'powercycleslower', 'poweronhourslower', 'powertocoolratio', 'psuefficiency', 'psurpmreading', 'psutemperaturereading', 'rpmreading', 'sysairflowefficiency', 'sysairflowperfanpower', 'sysairflowpersysinputpower', 'sysairflowutilization', 'sysnetairflow', 'sysracktempdelta', 'systemheadroominstantaneous', 'systeminputpower', 'systemoutputpower', 'systempowerconsumption', 'temperaturereading', 'totalcpupower', 'totalfanpower', 'totalmemorypower', 'totalpsuheatdissipation', 'totalstoragepower', 'unsafeshutdownslower', 'voltagereading', 'wattsreading'];
+// ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// // debugger
+// // initFlowTypeFromFiles();
+// // debugger
+// ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//         serviceLists = serviceListattr.map((key, index) => ({
+//             text: key,
+//             id: index,
+//             enable: true,
+//             sub: [{
+//                 text: key,
+//                 id: 0,
+//                 enable: true,
+//                 idroot: index,
+//                 angle: (2 * Math.PI * index) / serviceListattr.length,
+//                 range: [0, 3000],
+//             }]
+//         }));
+//         serviceFullList = [];
+//         serviceLists.forEach(s => s.sub.forEach(ss => serviceFullList.push(ss)));
+//         serviceList_selected = serviceListattr.map((key, i) => ({
+//             text: key,
+//             index: i
+//         }));
+//         alternative_service = [...serviceListattr];
+//         alternative_scale = Array(serviceListattr.length).fill(1);
             renderModeMenu();
+            applyServiceListForRange("-3");
             loadSampleData();
     } catch (e) {
         request = new Simulation('src/data/922020-932020-145000.json');
